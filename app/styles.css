@@ -9,6 +9,11 @@
   --border: #dfd8ca;
 }
 * { box-sizing: border-box; }
+button, input, select {
+  font: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
 body {
   margin: 0;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
@@ -33,6 +38,7 @@ body {
   min-height: 44px;
   font-size: 0.95rem;
   font-weight: 600;
+  color: var(--text);
 }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn,
@@ -102,45 +108,47 @@ body {
   box-shadow: 0 10px 24px rgb(30 64 175 / 0.18);
   padding: 20px;
 }
-.add-card .row button {
-  min-height: 54px;
-  padding-top: 14px;
-  padding-bottom: 14px;
-}
-.add-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.add-card-header h2 {
-  margin: 0;
-  font-size: 1rem;
-  letter-spacing: 0.01em;
-}
-.add-toggle-btn {
-  width: auto;
-  max-width: none;
-  min-width: 96px;
-  height: 40px;
-  margin-left: auto;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.9rem;
-}
 .add-card.is-collapsed form {
   display: none;
 }
-.add-card.is-collapsed {
-  padding-top: 10px;
-  padding-bottom: 10px;
+.add-card.is-collapsed,
+.add-card.is-collapsed .add-card-header {
+  display: none;
 }
 .app-shell.modal-focus .add-card {
   pointer-events: none;
 }
-.row { display: grid; grid-template-columns: 1fr 120px 140px; gap: 12px; margin-top: 12px; }
+.add-card-header {
+  margin-bottom: 10px;
+}
+.add-card-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.add-layout {
+  display: grid;
+  grid-template-columns: 1fr 170px;
+  grid-template-rows: auto auto;
+  gap: 12px;
+  align-items: stretch;
+}
+.add-item-input {
+  grid-column: 1;
+  grid-row: 1;
+}
+.add-lower-left {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 12px;
+}
+.add-submit-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 128px;
+  align-self: stretch;
+}
 .suggestions { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--border); }
 .suggestions li { padding: 8px 0; cursor: pointer; color: var(--muted); }
 .section-title { margin: 2px 2px 12px; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -163,6 +171,12 @@ body {
 }
 .item-main-btn .item-name {
   display: inline-block;
+}
+.item-check-icon {
+  display: inline-block;
+  font-weight: 700;
+  color: #0f766e;
+  margin-right: 2px;
 }
 .item-main-btn .item-qty {
   display: inline-block;
@@ -264,18 +278,47 @@ body {
   border-bottom: 1px solid #ece6da;
 }
 #checked-modal .modal-content {
+  width: min(900px, 96vw);
+  max-height: 88vh;
   padding: 0;
   overflow: auto;
 }
 #checked-modal .modal-header {
   margin: 0;
-  padding: 14px 14px 10px;
+  padding: 16px 16px 12px;
   z-index: 5;
+}
+#checked-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+#checked-modal #close-checked-btn {
+  min-width: 52px;
+  min-height: 52px;
+  font-size: 1.25rem;
+  border-radius: 12px;
 }
 #checked-modal #checked-list {
   list-style: none;
   margin: 0;
-  padding: 8px 14px 14px;
+  padding: 10px 16px 16px;
+}
+#checked-modal .item-name {
+  font-size: 1.15rem;
+}
+#checked-modal .db-section-row label,
+#checked-modal .db-section-select {
+  font-size: 0.95rem;
+}
+#checked-modal .db-icon-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 1.05rem;
+}
+#conflict-message {
+  margin: 10px 0 14px;
+  line-height: 1.4;
+  white-space: pre-line;
 }
 main { padding-bottom: 0; }
 .check-toast {
@@ -302,9 +345,37 @@ main { padding-bottom: 0; }
   padding: 5px 9px;
   font-weight: 600;
 }
+.add-fab-btn {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 112px;
+  height: 112px;
+  border: 0;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 4rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 20px rgb(15 118 110 / 0.35);
+  z-index: 999;
+}
+.add-fab-btn:active {
+  transform: scale(0.95);
+}
 @media (max-width: 720px) {
   .app-shell { padding: 14px; }
-  .row { grid-template-columns: 1fr 104px 1fr; gap: 10px; }
+  .add-layout {
+    grid-template-columns: 1fr 140px;
+    gap: 10px;
+  }
+  .add-lower-left {
+    grid-template-columns: 1fr 110px;
+    gap: 10px;
+  }
   .footer-actions { flex-wrap: wrap; }
   .topbar-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));

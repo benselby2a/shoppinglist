@@ -45,12 +45,14 @@ const state = {
   suggestions: [],
   pending: [],
   conflictCount: 0,
+  conflictQueue: [],
   syncing: false,
   online: navigator.onLine,
   supabaseReachable: false,
   lastSyncError: "",
   lastAction: null,
-  suggestionIndex: []
+  suggestionIndex: [],
+  lastSyncAt: null
 };
 
 const dbPromise = openDB();
@@ -69,7 +71,6 @@ const el = {
   sectionsContainer: document.getElementById("sections-container"),
   addForm: document.getElementById("add-form"),
   addCard: document.querySelector(".add-card"),
-  toggleAddCardBtn: document.getElementById("toggle-add-card-btn"),
   itemName: document.getElementById("item-entry"),
   itemOptions: document.getElementById("item-options"),
   itemQty: document.getElementById("item-qty"),
@@ -79,10 +80,15 @@ const el = {
   closeCheckedBtn: document.getElementById("close-checked-btn"),
   dbFeedback: document.getElementById("db-feedback"),
   checkedList: document.getElementById("checked-list"),
+  addFabBtn: document.getElementById("add-fab-btn"),
   topUndoBtn: document.getElementById("top-undo-btn"),
   checkToast: document.getElementById("check-toast"),
   checkToastText: document.getElementById("check-toast-text"),
   checkToastUndoBtn: document.getElementById("check-toast-undo-btn"),
+  conflictModal: document.getElementById("conflict-modal"),
+  closeConflictBtn: document.getElementById("close-conflict-btn"),
+  resolveConflictBtn: document.getElementById("resolve-conflict-btn"),
+  conflictMessage: document.getElementById("conflict-message"),
   appShell: document.querySelector(".app-shell"),
 };
 
@@ -154,15 +160,18 @@ function bindEvents() {
     captureUndo("add", { id: item.id });
     // Render immediately so offline users see the item instantly.
     render();
-    await enqueue("upsert", item);
-    await upsertSuggestion(name, item.section);
+    enqueue("upsert", item).catch(() => {});
+    upsertSuggestion(name, item.section).catch(() => {});
     el.addForm.reset();
     renderSuggestions();
     syncNow();
   });
 
   el.itemName.addEventListener("focus", renderSuggestions);
-  el.toggleAddCardBtn.addEventListener("click", toggleAddCardCollapsed);
+  el.addFabBtn.addEventListener("click", () => {
+    const currentlyCollapsed = el.addCard.classList.contains("is-collapsed");
+    setAddCardCollapsed(!currentlyCollapsed);
+  });
 
   el.itemName.addEventListener("input", scheduleSuggestionsRender);
   el.addFavouritesBtn.addEventListener("click", addFavouritesToList);
@@ -189,6 +198,9 @@ function bindEvents() {
     await undoLastAction();
     hideCheckToast();
   });
+
+  el.closeConflictBtn.addEventListener("click", acknowledgeConflict);
+  el.resolveConflictBtn.addEventListener("click", acknowledgeConflict);
 
 }
 
@@ -230,6 +242,7 @@ function itemRow(item) {
   row.className = "item-row";
   row.innerHTML = `
     <button class="item-main-btn" type="button" aria-label="Check ${escapeHtml(item.name)}">
+      <span class="item-check-icon">✓</span>
       <span class="item-name"></span>
       <span class="item-qty"></span>
     </button>
@@ -243,8 +256,9 @@ function itemRow(item) {
     item.checked = true;
     item.updated_at = new Date().toISOString();
     captureUndo("check", prev);
-    await enqueue("upsert", item);
+    // Local-first UX: hide immediately, sync in background.
     render();
+    enqueue("upsert", item).catch(() => {});
     syncNow();
   });
 
@@ -253,8 +267,9 @@ function itemRow(item) {
     item.deleted_at = new Date().toISOString();
     item.updated_at = new Date().toISOString();
     captureUndo("delete", prev);
-    await enqueue("upsert", item);
+    // Local-first UX: remove immediately, sync in background.
     render();
+    enqueue("upsert", item).catch(() => {});
     syncNow();
   });
 
@@ -460,16 +475,11 @@ function restoreAddCardState() {
   setAddCardCollapsed(collapsed);
 }
 
-function toggleAddCardCollapsed() {
-  const currentlyCollapsed = el.addCard.classList.contains("is-collapsed");
-  setAddCardCollapsed(!currentlyCollapsed);
-}
-
 function setAddCardCollapsed(collapsed) {
   el.addCard.classList.toggle("is-collapsed", collapsed);
-  el.toggleAddCardBtn.textContent = collapsed ? "Expand ▴" : "Collapse ▾";
-  el.toggleAddCardBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-  el.toggleAddCardBtn.setAttribute("aria-label", collapsed ? "Expand new item panel" : "Collapse new item panel");
+  el.addFabBtn.textContent = collapsed ? "＋" : "－";
+  el.addFabBtn.setAttribute("aria-label", collapsed ? "Show add new item panel" : "Hide add new item panel");
+  el.addFabBtn.hidden = false;
   localStorage.setItem(ADD_CARD_COLLAPSED_KEY, String(collapsed));
 }
 
@@ -484,22 +494,29 @@ function escapeHtml(value) {
 function renderSyncBar() {
   const pendingCount = state.pending.length;
   const hasError = Boolean(state.lastSyncError);
-  const conflict = state.conflictCount > 0 || hasError;
   const effectivelyOnline = state.online && (supabase ? state.supabaseReachable : true);
 
   el.syncBar.className = "sync-bar " +
-    (conflict ? "sync-conflict" : effectivelyOnline ? "sync-online" : "sync-offline");
+    (hasError ? "sync-conflict" : effectivelyOnline ? "sync-online" : "sync-offline");
 
-  el.syncText.textContent = conflict
-    ? (hasError ? "Sync warning" : "Conflict detected")
+  el.syncText.textContent = hasError
+    ? "Sync warning"
     : state.syncing
       ? "Checking..."
       : effectivelyOnline
         ? "Online"
-        : "Offline";
+        : "No connection, will sync once signal is available";
 
-  const err = state.lastSyncError ? ` · ${state.lastSyncError}` : "";
-  el.syncMeta.textContent = `${pendingCount} pending · ${state.conflictCount} conflicts${err}`;
+  if (pendingCount > 0) {
+    el.syncMeta.textContent = `${pendingCount} items will sync once you have connectivity`;
+  } else if (state.lastSyncError) {
+    el.syncMeta.textContent = state.lastSyncError;
+  } else if (state.lastSyncAt) {
+    const time = new Date(state.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    el.syncMeta.textContent = `Last update: ${time}`;
+  } else {
+    el.syncMeta.textContent = "Last update: --";
+  }
 }
 
 function captureUndo(type, payload) {
@@ -588,14 +605,65 @@ function applyRemote(remote) {
     state.items.push(remote);
   } else {
     const local = state.items[idx];
-    if (new Date(remote.updated_at).getTime() < new Date(local.updated_at).getTime()) {
-      state.conflictCount += 1;
+    const remoteTs = new Date(remote.updated_at).getTime();
+    const localTs = new Date(local.updated_at).getTime();
+    const differs = hasMaterialDifference(local, remote);
+
+    if (differs && remoteTs < localTs) {
+      queueConflict(`Keeping your local change for "${local.name}". Remote change was older and ignored.`);
       return;
+    }
+    if (differs && remoteTs > localTs) {
+      queueConflict(describeRemoteResolution(local, remote));
     }
     state.items[idx] = remote;
   }
   persistLocal();
   render();
+}
+
+function hasMaterialDifference(a, b) {
+  return (
+    a.name !== b.name ||
+    a.section !== b.section ||
+    a.quantity_text !== b.quantity_text ||
+    Boolean(a.checked) !== Boolean(b.checked) ||
+    Boolean(a.deleted_at) !== Boolean(b.deleted_at)
+  );
+}
+
+function describeRemoteResolution(local, remote) {
+  const label = remote.name || local.name || "item";
+  if (!local.deleted_at && remote.deleted_at) return `Conflict on "${label}": it will be removed based on the latest update.`;
+  if (!local.checked && remote.checked) return `Conflict on "${label}": it will be marked checked and removed from the active list.`;
+  if (local.checked && !remote.checked) return `Conflict on "${label}": it will be restored to the active list.`;
+  if (local.section !== remote.section) return `Conflict on "${label}": section will change to ${remote.section}.`;
+  if (local.quantity_text !== remote.quantity_text) return `Conflict on "${label}": quantity will change to "${remote.quantity_text || "none"}".`;
+  if (local.name !== remote.name) return `Conflict: item will be renamed to "${remote.name}".`;
+  return `Conflict on "${label}": latest update will be applied.`;
+}
+
+function queueConflict(message) {
+  if (!state.conflictQueue.includes(message)) {
+    state.conflictQueue.push(message);
+  }
+  state.conflictCount = state.conflictQueue.length;
+  renderSyncBar();
+  showConflictSummary();
+}
+
+function showConflictSummary() {
+  if (!state.conflictQueue.length) return;
+  const summary = state.conflictQueue.map((msg, idx) => `${idx + 1}. ${msg}`).join("\n");
+  el.conflictMessage.textContent = summary;
+  el.conflictModal.classList.add("is-open");
+}
+
+function acknowledgeConflict() {
+  state.conflictQueue = [];
+  state.conflictCount = 0;
+  el.conflictModal.classList.remove("is-open");
+  renderSyncBar();
 }
 
 async function syncNow() {
@@ -622,6 +690,7 @@ async function syncNow() {
   state.supabaseReachable = !error;
   state.online = !error;
   state.lastSyncError = error ? `connect failed: ${error.message}` : "";
+  if (!error) state.lastSyncAt = new Date().toISOString();
   if (data) state.items = mergeById(state.items, data);
   if (!error) await syncSuggestionsFromRemote();
 

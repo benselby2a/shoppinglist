@@ -12,8 +12,8 @@
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <h1>Shopping List</h1>
-          <p id="household-label">Household: Shared</p>
+          <h1>MSL</h1>
+          <p id="household-label">🐳 Manatee Shopping List</p>
         </div>
         <div class="topbar-actions">
           <button id="top-undo-btn" class="icon-btn" type="button" aria-label="Undo last action" disabled>Undo</button>
@@ -32,28 +32,27 @@
       </main>
 
       <section class="card add-card">
-        <div class="add-card-header">
-          <h2>Add New Item</h2>
-          <button id="toggle-add-card-btn" class="icon-btn add-toggle-btn" type="button" aria-expanded="true" aria-label="Collapse new item panel">Collapse ▾</button>
-        </div>
         <form id="add-form" autocomplete="off">
-          <input
-            id="item-entry"
-            name="inventory-entry"
-            list="item-options"
-            placeholder="Add milk, bananas..."
-            required
-            autocomplete="new-password"
-            autocapitalize="off"
-            autocorrect="on"
-            spellcheck="true"
-            inputmode="text"
-          />
-          <datalist id="item-options"></datalist>
-          <div class="row">
-            <select id="item-section"></select>
-            <input id="item-qty" name="shopping-qty" placeholder="Qty" autocomplete="off" />
-            <button id="add-item-btn" type="submit" tabindex="0">Add Item</button>
+          <div class="add-layout">
+            <input
+              id="item-entry"
+              class="add-item-input"
+              name="inventory-entry"
+              list="item-options"
+              placeholder="Add milk, bananas..."
+              required
+              autocomplete="new-password"
+              autocapitalize="off"
+              autocorrect="on"
+              spellcheck="true"
+              inputmode="text"
+            />
+            <datalist id="item-options"></datalist>
+            <div class="add-lower-left">
+              <select id="item-section"></select>
+              <input id="item-qty" name="shopping-qty" placeholder="Qty" autocomplete="off" />
+            </div>
+            <button id="add-item-btn" class="add-submit-btn" type="submit" tabindex="0">Add Item</button>
           </div>
         </form>
       </section>
@@ -76,6 +75,21 @@
     <div id="check-toast" class="check-toast" hidden>
       <span id="check-toast-text">Checked Item</span>
       <button id="check-toast-undo-btn" type="button">Undo</button>
+    </div>
+
+    <button id="add-fab-btn" class="add-fab-btn" type="button" aria-label="Add new item" hidden>＋</button>
+
+    <div id="conflict-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Conflict Detected</h2>
+          <button id="close-conflict-btn" class="icon-btn" type="button">✕</button>
+        </div>
+        <p id="conflict-message"></p>
+        <div class="db-actions">
+          <button id="resolve-conflict-btn" class="icon-btn" type="button">OK</button>
+        </div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
