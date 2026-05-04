@@ -2,7 +2,7 @@ const APP_CONFIG = {
   supabaseUrl: "https://cnkznpkvwoqxaiywwmhr.supabase.co",
   supabaseAnonKey: "sb_publishable_xlNQ_QudJNUlMLjWpr0iJA_YgO87tox",
   householdId: "shared-household",
-  passcode: "123456"
+  passcode: ""
 };
 
 const SECTIONS = [
@@ -22,6 +22,23 @@ const SECTIONS = [
   "Toiletries"
 ];
 
+const SECTION_KEYWORDS = {
+  "Fruit and Veg": ["apple", "banana", "berries", "broccoli", "carrot", "lettuce", "onion", "potato", "tomato"],
+  Meat: ["beef", "chicken", "lamb", "mince", "pork", "steak", "sausages", "bacon", "turkey"],
+  Fish: ["cod", "haddock", "prawn", "salmon", "tuna", "fish"],
+  Deli: ["ham", "salami", "prosciutto", "olives", "deli"],
+  Dairy: ["milk", "cheese", "butter", "yoghurt", "cream", "eggs"],
+  "Canned Good and Spices": ["beans", "chickpeas", "tomatoes", "canned", "pepper", "paprika", "cumin", "spice"],
+  Snacks: ["crisps", "chips", "nuts", "cracker", "snack", "chocolate", "biscuits"],
+  Drinks: ["juice", "water", "soda", "cola", "drink", "lemonade"],
+  Cereal: ["cereal", "granola", "oats", "muesli", "cornflakes"],
+  "Coffee and Tea": ["coffee", "tea", "espresso", "decaf"],
+  Bakery: ["bread", "bagel", "roll", "croissant", "cake", "muffin"],
+  Frozen: ["frozen", "ice cream", "peas"],
+  "Household and Cleaning": ["detergent", "bleach", "cleaner", "washing up", "bin bags", "sponges"],
+  Toiletries: ["toothpaste", "shampoo", "soap", "deodorant", "toilet paper", "razor"]
+};
+
 const state = {
   items: [],
   checkedItems: [],
@@ -32,11 +49,17 @@ const state = {
   online: navigator.onLine,
   supabaseReachable: false,
   lastSyncError: "",
-  lastAction: null
+  lastAction: null,
+  suggestionIndex: []
 };
 
 const dbPromise = openDB();
 let supabase = null;
+const ADD_CARD_COLLAPSED_KEY = "shopping_list_add_card_collapsed";
+let suggestionTimer = null;
+let lastSuggestionQuery = "";
+let checkToastTimer = null;
+let dbFeedbackTimer = null;
 
 const el = {
   syncBar: document.getElementById("sync-bar"),
@@ -45,18 +68,22 @@ const el = {
   sectionSelect: document.getElementById("item-section"),
   sectionsContainer: document.getElementById("sections-container"),
   addForm: document.getElementById("add-form"),
-  itemName: document.getElementById("item-name"),
+  addCard: document.querySelector(".add-card"),
+  toggleAddCardBtn: document.getElementById("toggle-add-card-btn"),
+  itemName: document.getElementById("item-entry"),
+  itemOptions: document.getElementById("item-options"),
   itemQty: document.getElementById("item-qty"),
-  suggestions: document.getElementById("suggestions"),
-  syncNowBtn: document.getElementById("sync-now-btn"),
-  importFile: document.getElementById("import-file"),
+  addFavouritesBtn: document.getElementById("add-favourites-btn"),
   checkedModal: document.getElementById("checked-modal"),
   showCheckedBtn: document.getElementById("show-checked-btn"),
   closeCheckedBtn: document.getElementById("close-checked-btn"),
+  dbFeedback: document.getElementById("db-feedback"),
   checkedList: document.getElementById("checked-list"),
-  undoToast: document.getElementById("undo-toast"),
-  undoBtn: document.getElementById("undo-btn"),
-  undoMessage: document.getElementById("undo-message")
+  topUndoBtn: document.getElementById("top-undo-btn"),
+  checkToast: document.getElementById("check-toast"),
+  checkToastText: document.getElementById("check-toast-text"),
+  checkToastUndoBtn: document.getElementById("check-toast-undo-btn"),
+  appShell: document.querySelector(".app-shell"),
 };
 
 init();
@@ -66,7 +93,10 @@ async function init() {
   el.sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
   bindEvents();
   await loadLocal();
+  restoreAddCardState();
+  await seedSuggestionsFromItems();
   render();
+  renderSuggestions();
   initSupabase();
   syncNow();
   setInterval(syncNow, 15000);
@@ -79,11 +109,19 @@ async function init() {
 }
 
 function guardPasscode() {
+  if (!APP_CONFIG.passcode) return;
+
+  const saved = localStorage.getItem("shopping_list_passcode_ok");
+  if (saved === APP_CONFIG.passcode) return;
+
   const code = prompt("Enter household passcode");
   if (code !== APP_CONFIG.passcode) {
     alert("Incorrect passcode");
     location.reload();
+    return;
   }
+
+  localStorage.setItem("shopping_list_passcode_ok", APP_CONFIG.passcode);
 }
 
 function bindEvents() {
@@ -99,7 +137,8 @@ function bindEvents() {
 
   el.addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const name = el.itemName.value.trim();
+    const rawName = normalizeItemName(el.itemName.value);
+    const name = autoCorrectItemName(rawName);
     if (!name) return;
     const item = {
       id: crypto.randomUUID(),
@@ -116,33 +155,40 @@ function bindEvents() {
     await enqueue("upsert", item);
     await upsertSuggestion(name, item.section);
     el.addForm.reset();
+    renderSuggestions();
     render();
     syncNow();
   });
 
-  el.itemName.addEventListener("input", renderSuggestions);
-  el.syncNowBtn.addEventListener("click", syncNow);
+  el.itemName.addEventListener("focus", renderSuggestions);
+  el.toggleAddCardBtn.addEventListener("click", toggleAddCardCollapsed);
 
-  el.importFile.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 1000);
-    for (const line of lines) await upsertSuggestion(line, "");
-    el.importFile.value = "";
-    renderSuggestions();
-  });
+  el.itemName.addEventListener("input", scheduleSuggestionsRender);
+  el.addFavouritesBtn.addEventListener("click", addFavouritesToList);
 
   el.showCheckedBtn.addEventListener("click", () => {
+    const isOpen = el.checkedModal.classList.contains("is-open");
+    if (isOpen) {
+      closeCheckedModal();
+      return;
+    }
     el.checkedModal.classList.add("is-open");
+    el.appShell.classList.add("modal-focus");
+    el.showCheckedBtn.textContent = "Hide Item Database";
     renderCheckedModal();
   });
-  el.closeCheckedBtn.addEventListener("click", () => el.checkedModal.classList.remove("is-open"));
+  el.closeCheckedBtn.addEventListener("click", closeCheckedModal);
 
-  el.undoBtn.addEventListener("click", async () => {
+  el.topUndoBtn.addEventListener("click", async () => {
     if (!state.lastAction) return;
     await undoLastAction();
   });
+  el.checkToastUndoBtn.addEventListener("click", async () => {
+    if (!state.lastAction) return;
+    await undoLastAction();
+    hideCheckToast();
+  });
+
 }
 
 function render() {
@@ -152,18 +198,11 @@ function render() {
   el.sectionsContainer.innerHTML = "";
   for (const section of SECTIONS) {
     const items = grouped.get(section);
+    if (!items?.length) continue;
     const card = document.createElement("section");
     card.className = "card";
     card.innerHTML = `<h3 class="section-title">${section}</h3>`;
-
-    if (!items?.length) {
-      const p = document.createElement("p");
-      p.className = "item-qty";
-      p.textContent = "No items";
-      card.appendChild(p);
-    } else {
-      for (const item of items) card.appendChild(itemRow(item));
-    }
+    for (const item of items) card.appendChild(itemRow(item));
 
     el.sectionsContainer.appendChild(card);
   }
@@ -175,15 +214,16 @@ function itemRow(item) {
   const row = document.createElement("div");
   row.className = "item-row";
   row.innerHTML = `
-    <input type="checkbox" />
-    <span class="item-name"></span>
-    <span class="item-qty"></span>
-    <button class="delete-btn" type="button">Remove</button>
+    <button class="item-main-btn" type="button" aria-label="Check ${escapeHtml(item.name)}">
+      <span class="item-name"></span>
+      <span class="item-qty"></span>
+    </button>
+    <button class="delete-btn" type="button" aria-label="Remove ${escapeHtml(item.name)}">✕</button>
   `;
   row.querySelector(".item-name").textContent = item.name;
   row.querySelector(".item-qty").textContent = item.quantity_text || "";
 
-  row.querySelector("input").addEventListener("change", async () => {
+  row.querySelector(".item-main-btn").addEventListener("click", async () => {
     const prev = { ...item };
     item.checked = true;
     item.updated_at = new Date().toISOString();
@@ -208,68 +248,237 @@ function itemRow(item) {
 
 function renderCheckedModal() {
   const checked = state.items.filter((i) => i.checked && !i.deleted_at);
-  el.checkedList.innerHTML = "";
+  const byKey = new Map();
+
+  for (const suggestion of state.suggestions) {
+    const key = canonicalNameKey(suggestion.name);
+    if (!key) continue;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        name: suggestion.name,
+        section: suggestion.section || "",
+        checkedItem: null,
+        favourite: Boolean(suggestion.favourite)
+      });
+    } else if (suggestion.favourite) {
+      byKey.get(key).favourite = true;
+    }
+  }
+
   for (const item of checked) {
+    const key = canonicalNameKey(item.name);
+    if (!key) continue;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        name: item.name,
+        section: item.section || "",
+        checkedItem: item,
+        favourite: false
+      });
+    } else {
+      byKey.get(key).checkedItem = item;
+    }
+  }
+
+  const entries = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  el.checkedList.innerHTML = "";
+  for (const entry of entries) {
     const li = document.createElement("li");
     li.className = "item-row";
     li.innerHTML = `
-      <span>✓</span>
-      <span class="item-name"></span>
-      <span class="item-qty"></span>
-      <button type="button">Uncheck</button>
+      <div>
+        <span class="item-name"></span>
+        <div class="db-section-row">
+          <label>Section</label>
+          <select class="db-section-select"></select>
+        </div>
+      </div>
+      <div class="db-actions"></div>
     `;
-    li.querySelector(".item-name").textContent = `${item.name} (${item.section})`;
-    li.querySelector(".item-qty").textContent = item.quantity_text || "";
-    li.querySelector("button").addEventListener("click", async () => {
-      const prev = { ...item };
-      item.checked = false;
-      item.updated_at = new Date().toISOString();
-      captureUndo("uncheck", prev);
-      await enqueue("upsert", item);
+    li.querySelector(".item-name").textContent = entry.name;
+    const sectionSelect = li.querySelector(".db-section-select");
+    sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
+    if (entry.section && SECTIONS.includes(entry.section)) {
+      sectionSelect.value = entry.section;
+    } else {
+      sectionSelect.value = SECTIONS[0];
+    }
+    sectionSelect.addEventListener("change", async () => {
+      await updateEntrySection(entry.name, sectionSelect.value);
+      showDbFeedback(`Section set to ${sectionSelect.value}`);
       renderCheckedModal();
       render();
       syncNow();
     });
+
+    const actions = li.querySelector(".db-actions");
+    const favouriteBtn = document.createElement("button");
+    favouriteBtn.type = "button";
+    favouriteBtn.className = "db-icon-btn db-fav-btn";
+    favouriteBtn.textContent = entry.favourite ? "★" : "☆";
+    favouriteBtn.title = entry.favourite ? "Unfavourite item" : "Favourite item";
+    favouriteBtn.setAttribute("aria-label", entry.favourite ? "Unfavourite item" : "Favourite item");
+    favouriteBtn.addEventListener("click", async () => {
+      await setFavourite(entry.name, !entry.favourite, entry.section);
+      showDbFeedback(entry.favourite ? "Removed from favourites" : "Added to favourites");
+      renderCheckedModal();
+    });
+    actions.appendChild(favouriteBtn);
+
+    if (entry.checkedItem) {
+      const uncheckBtn = document.createElement("button");
+      uncheckBtn.type = "button";
+      uncheckBtn.className = "db-icon-btn db-uncheck-btn";
+      uncheckBtn.textContent = "↺";
+      uncheckBtn.title = "Uncheck item";
+      uncheckBtn.setAttribute("aria-label", "Uncheck item");
+      uncheckBtn.addEventListener("click", async () => {
+        const prev = { ...entry.checkedItem };
+        entry.checkedItem.checked = false;
+        entry.checkedItem.updated_at = new Date().toISOString();
+        captureUndo("uncheck", prev);
+        await enqueue("upsert", entry.checkedItem);
+        showDbFeedback("Item unchecked");
+        renderCheckedModal();
+        render();
+        syncNow();
+      });
+      actions.appendChild(uncheckBtn);
+    }
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "db-icon-btn db-delete-btn";
+    deleteBtn.textContent = "🗑";
+    deleteBtn.title = "Delete item";
+    deleteBtn.setAttribute("aria-label", "Delete item");
+    deleteBtn.addEventListener("click", async () => {
+      const confirmed = window.confirm(`Delete "${entry.name}" from Item Database? This removes it from autocomplete.`);
+      if (!confirmed) return;
+      await deleteDatabaseEntry(entry.name);
+      showDbFeedback("Item deleted");
+      renderCheckedModal();
+      render();
+      syncNow();
+    });
+    actions.appendChild(deleteBtn);
+
     el.checkedList.appendChild(li);
   }
 }
 
+function closeCheckedModal() {
+  el.checkedModal.classList.remove("is-open");
+  el.appShell.classList.remove("modal-focus");
+  el.showCheckedBtn.textContent = "Show Item Database";
+}
+
+function normalizeSection(raw) {
+  if (!raw) return "";
+  const normalizedRaw = raw.toLowerCase();
+  const match = SECTIONS.find((section) => section.toLowerCase() === normalizedRaw);
+  return match || "";
+}
+
 function renderSuggestions() {
   const q = el.itemName.value.trim().toLowerCase();
-  if (!q) {
-    el.suggestions.hidden = true;
+  applySectionGuess(q);
+  if (q.length < 3) {
+    lastSuggestionQuery = q;
+    el.itemOptions.innerHTML = "";
     return;
   }
-  const matches = state.suggestions
-    .filter((s) => s.name.toLowerCase().includes(q))
-    .slice(0, 5);
+  if (q === lastSuggestionQuery && el.itemOptions.children.length > 0) return;
+  lastSuggestionQuery = q;
+  const matches = state.suggestionIndex
+    .filter((s) => !q || s.nameLower.includes(q))
+    .sort((a, b) => {
+      const aStarts = a.nameLower.startsWith(q) ? 0 : 1;
+      const bStarts = b.nameLower.startsWith(q) ? 0 : 1;
+      if (aStarts !== bStarts) return aStarts - bStarts;
+      return b.use_count - a.use_count;
+    })
+    .slice(0, 20);
 
-  el.suggestions.innerHTML = matches
-    .map((s) => `<li data-name="${s.name}" data-section="${s.section || ""}">${s.name}</li>`)
+  el.itemOptions.innerHTML = matches
+    .map((s) => `<option value="${escapeHtml(s.name)}"></option>`)
     .join("");
-  el.suggestions.hidden = matches.length === 0;
+}
 
-  for (const node of el.suggestions.querySelectorAll("li")) {
-    node.addEventListener("click", () => {
-      el.itemName.value = node.dataset.name;
-      if (node.dataset.section) el.sectionSelect.value = node.dataset.section;
-      el.suggestions.hidden = true;
-    });
+function scheduleSuggestionsRender() {
+  if (suggestionTimer) clearTimeout(suggestionTimer);
+  suggestionTimer = setTimeout(() => {
+    renderSuggestions();
+    suggestionTimer = null;
+  }, 80);
+}
+
+function applySectionGuess(queryLower) {
+  if (!queryLower) return;
+  const guessed = guessSection(queryLower);
+  if (guessed) el.sectionSelect.value = guessed;
+}
+
+function guessSection(queryLower) {
+  const q = queryLower.trim();
+  if (!q) return "";
+
+  const exact = state.suggestions.find((s) =>
+    s.section && s.name && s.name.trim().toLowerCase() === q
+  );
+  if (exact?.section) return exact.section;
+
+  const contains = state.suggestions.find((s) =>
+    s.section && s.name && s.name.trim().toLowerCase().includes(q)
+  );
+  if (contains?.section) return contains.section;
+
+  for (const [section, words] of Object.entries(SECTION_KEYWORDS)) {
+    if (words.some((w) => q.includes(w))) return section;
   }
+
+  return "";
+}
+
+function restoreAddCardState() {
+  const collapsed = localStorage.getItem(ADD_CARD_COLLAPSED_KEY) === "true";
+  setAddCardCollapsed(collapsed);
+}
+
+function toggleAddCardCollapsed() {
+  const currentlyCollapsed = el.addCard.classList.contains("is-collapsed");
+  setAddCardCollapsed(!currentlyCollapsed);
+}
+
+function setAddCardCollapsed(collapsed) {
+  el.addCard.classList.toggle("is-collapsed", collapsed);
+  el.toggleAddCardBtn.textContent = collapsed ? "Expand ▴" : "Collapse ▾";
+  el.toggleAddCardBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  el.toggleAddCardBtn.setAttribute("aria-label", collapsed ? "Expand new item panel" : "Collapse new item panel");
+  localStorage.setItem(ADD_CARD_COLLAPSED_KEY, String(collapsed));
+}
+
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;");
 }
 
 function renderSyncBar() {
   const pendingCount = state.pending.length;
-  const conflict = state.conflictCount > 0;
+  const hasError = Boolean(state.lastSyncError);
+  const conflict = state.conflictCount > 0 || hasError;
   const effectivelyOnline = state.online && (supabase ? state.supabaseReachable : true);
 
   el.syncBar.className = "sync-bar " +
-    (conflict ? "sync-conflict" : state.syncing ? "sync-syncing" : effectivelyOnline ? "sync-online" : "sync-offline");
+    (conflict ? "sync-conflict" : effectivelyOnline ? "sync-online" : "sync-offline");
 
   el.syncText.textContent = conflict
-    ? "Conflict detected"
+    ? (hasError ? "Sync warning" : "Conflict detected")
     : state.syncing
-      ? "Syncing"
+      ? "Checking..."
       : effectivelyOnline
         ? "Online"
         : "Offline";
@@ -280,11 +489,9 @@ function renderSyncBar() {
 
 function captureUndo(type, payload) {
   state.lastAction = { type, payload, ts: Date.now() };
-  el.undoMessage.textContent = `Last action: ${type}`;
-  el.undoToast.hidden = false;
-  setTimeout(() => {
-    if (Date.now() - state.lastAction.ts >= 10000) el.undoToast.hidden = true;
-  }, 10000);
+  el.topUndoBtn.disabled = false;
+  el.topUndoBtn.textContent = `Undo ${actionLabel(type)}`;
+  if (type === "check") showCheckToast(payload?.name);
 }
 
 async function undoLastAction() {
@@ -304,9 +511,46 @@ async function undoLastAction() {
     }
   }
   state.lastAction = null;
-  el.undoToast.hidden = true;
+  el.topUndoBtn.disabled = true;
+  el.topUndoBtn.textContent = "Undo";
   render();
   syncNow();
+}
+
+function actionLabel(type) {
+  if (type === "add") return "add item";
+  if (type === "check") return "check item";
+  if (type === "uncheck") return "uncheck item";
+  if (type === "delete") return "remove item";
+  return "action";
+}
+
+function showCheckToast(itemName) {
+  if (checkToastTimer) clearTimeout(checkToastTimer);
+  el.checkToastText.textContent = itemName ? `Checked: ${itemName}` : "Checked Item";
+  el.checkToast.hidden = false;
+  checkToastTimer = setTimeout(() => {
+    hideCheckToast();
+  }, 3000);
+}
+
+function hideCheckToast() {
+  if (checkToastTimer) {
+    clearTimeout(checkToastTimer);
+    checkToastTimer = null;
+  }
+  el.checkToast.hidden = true;
+}
+
+function showDbFeedback(message) {
+  if (!el.dbFeedback) return;
+  if (dbFeedbackTimer) clearTimeout(dbFeedbackTimer);
+  el.dbFeedback.textContent = message;
+  el.dbFeedback.hidden = false;
+  dbFeedbackTimer = setTimeout(() => {
+    el.dbFeedback.hidden = true;
+    dbFeedbackTimer = null;
+  }, 1800);
 }
 
 async function initSupabase() {
@@ -364,6 +608,7 @@ async function syncNow() {
   state.online = !error;
   state.lastSyncError = error ? `connect failed: ${error.message}` : "";
   if (data) state.items = mergeById(state.items, data);
+  if (!error) await syncSuggestionsFromRemote();
 
   state.syncing = false;
   render();
@@ -381,21 +626,243 @@ async function enqueue(type, payload) {
 }
 
 async function upsertSuggestion(name, section) {
-  const existing = state.suggestions.find((s) => s.name.toLowerCase() === name.toLowerCase());
+  const normalizedName = normalizeItemName(name);
+  if (!normalizedName) return;
+
+  const existing = state.suggestions.find((s) => canonicalNameKey(s.name) === canonicalNameKey(normalizedName));
   if (existing) {
+    existing.name = normalizedName;
+    if (section) existing.section = section;
     existing.use_count = (existing.use_count || 1) + 1;
     existing.last_used_at = new Date().toISOString();
   } else {
     state.suggestions.push({
       id: crypto.randomUUID(),
       household_id: APP_CONFIG.householdId,
-      name,
+      name: normalizedName,
       section,
       use_count: 1,
       last_used_at: new Date().toISOString()
     });
   }
+  rebuildSuggestionIndex();
   await persistLocal();
+  await upsertSuggestionRemote(existing || state.suggestions[state.suggestions.length - 1]);
+}
+
+async function seedSuggestionsFromItems() {
+  let changed = false;
+  for (const item of state.items) {
+    if (!item?.name || item.deleted_at) continue;
+    const normalizedName = normalizeItemName(item.name);
+    if (!normalizedName) continue;
+    const exists = state.suggestions.find((s) => canonicalNameKey(s.name) === canonicalNameKey(normalizedName));
+    if (exists) continue;
+    state.suggestions.push({
+      id: crypto.randomUUID(),
+      household_id: APP_CONFIG.householdId,
+      name: normalizedName,
+      section: item.section || "",
+      use_count: 1,
+      last_used_at: new Date().toISOString()
+    });
+    changed = true;
+  }
+  rebuildSuggestionIndex();
+  if (changed) await persistLocal();
+}
+
+function rebuildSuggestionIndex() {
+  state.suggestionIndex = state.suggestions.map((s) => ({
+    name: s.name,
+    nameLower: (s.name || "").toLowerCase(),
+    use_count: s.use_count || 0
+  }));
+}
+
+function normalizeItemName(value) {
+  const compact = (value || "").trim().replace(/\s+/g, " ");
+  if (!compact) return "";
+  return compact
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function canonicalNameKey(value) {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "");
+}
+
+async function deleteDatabaseEntry(name) {
+  const key = canonicalNameKey(name);
+  if (!key) return;
+
+  const removed = state.suggestions.filter((s) => canonicalNameKey(s.name) === key);
+  state.suggestions = state.suggestions.filter((s) => canonicalNameKey(s.name) !== key);
+  rebuildSuggestionIndex();
+
+  const affectedItems = state.items.filter(
+    (item) => !item.deleted_at && canonicalNameKey(item.name) === key && item.checked
+  );
+  for (const item of affectedItems) {
+    item.deleted_at = new Date().toISOString();
+    item.updated_at = new Date().toISOString();
+    await enqueue("upsert", item);
+  }
+  await persistLocal();
+  await deleteSuggestionsRemote(removed);
+}
+
+async function setFavourite(name, favourite, fallbackSection = "") {
+  const key = canonicalNameKey(name);
+  if (!key) return;
+
+  let found = false;
+  for (const suggestion of state.suggestions) {
+    if (canonicalNameKey(suggestion.name) === key) {
+      suggestion.favourite = favourite;
+      if (!suggestion.section && fallbackSection) suggestion.section = fallbackSection;
+      found = true;
+    }
+  }
+
+  if (!found) {
+    state.suggestions.push({
+      id: crypto.randomUUID(),
+      household_id: APP_CONFIG.householdId,
+      name: normalizeItemName(name),
+      section: fallbackSection || "",
+      use_count: 1,
+      last_used_at: new Date().toISOString(),
+      favourite
+    });
+  }
+
+  rebuildSuggestionIndex();
+  await persistLocal();
+  const toSync = state.suggestions.filter((s) => canonicalNameKey(s.name) === key);
+  for (const suggestion of toSync) await upsertSuggestionRemote(suggestion);
+}
+
+async function updateEntrySection(name, newSection) {
+  const normalizedSection = normalizeSection(newSection) || SECTIONS[0];
+  const key = canonicalNameKey(name);
+  if (!key) return;
+
+  for (const suggestion of state.suggestions) {
+    if (canonicalNameKey(suggestion.name) === key) {
+      suggestion.section = normalizedSection;
+      await upsertSuggestionRemote(suggestion);
+    }
+  }
+
+  for (const item of state.items) {
+    if (item.deleted_at) continue;
+    if (canonicalNameKey(item.name) !== key) continue;
+    item.section = normalizedSection;
+    item.updated_at = new Date().toISOString();
+    await enqueue("upsert", item);
+  }
+
+  rebuildSuggestionIndex();
+  await persistLocal();
+}
+
+async function addFavouritesToList() {
+  const activeKeys = new Set(
+    state.items
+      .filter((item) => !item.deleted_at && !item.checked)
+      .map((item) => canonicalNameKey(item.name))
+  );
+
+  const favouriteSuggestions = state.suggestions.filter((s) => s.favourite);
+  let added = 0;
+  for (const suggestion of favouriteSuggestions) {
+    const key = canonicalNameKey(suggestion.name);
+    if (!key || activeKeys.has(key)) continue;
+
+    const item = {
+      id: crypto.randomUUID(),
+      household_id: APP_CONFIG.householdId,
+      name: normalizeItemName(suggestion.name),
+      section: normalizeSection(suggestion.section) || guessSection(suggestion.name.toLowerCase()) || SECTIONS[0],
+      quantity_text: "",
+      checked: false,
+      deleted_at: null,
+      updated_at: new Date().toISOString()
+    };
+    state.items.push(item);
+    activeKeys.add(key);
+    await enqueue("upsert", item);
+    added += 1;
+  }
+
+  if (added > 0) {
+    captureUndo("add", { id: state.items[state.items.length - 1].id });
+    render();
+    syncNow();
+  }
+}
+
+function autoCorrectItemName(inputName) {
+  const normalized = normalizeItemName(inputName);
+  if (!normalized) return "";
+  if (!state.suggestionIndex.length) return normalized;
+
+  const inputKey = canonicalNameKey(normalized);
+  const exact = state.suggestionIndex.find((s) => canonicalNameKey(s.name) === inputKey);
+  if (exact) return exact.name;
+
+  let best = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const suggestion of state.suggestionIndex) {
+    const candidate = suggestion.name;
+    const candidateKey = canonicalNameKey(candidate);
+    if (!candidateKey) continue;
+
+    const maxLen = Math.max(inputKey.length, candidateKey.length);
+    if (maxLen <= 2) continue;
+    const distance = levenshtein(inputKey, candidateKey);
+    const ratio = distance / maxLen;
+
+    // Conservative correction: only apply for very close matches.
+    if (ratio <= 0.22 && distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+
+  return best || normalized;
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+
+  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
+
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+
+  return prev[b.length];
 }
 
 async function loadLocal() {
@@ -403,6 +870,81 @@ async function loadLocal() {
   state.items = (await idbGet(db, "state", "items")) || [];
   state.suggestions = (await idbGet(db, "state", "suggestions")) || [];
   state.pending = (await idbGet(db, "state", "pending")) || [];
+  rebuildSuggestionIndex();
+}
+
+async function syncSuggestionsFromRemote() {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from("suggestion_items")
+    .select("*")
+    .eq("household_id", APP_CONFIG.householdId);
+  if (error || !data) return;
+
+  let changed = false;
+  for (const remote of data) {
+    const key = canonicalNameKey(remote.name);
+    if (!key) continue;
+    const local = state.suggestions.find((s) => canonicalNameKey(s.name) === key);
+    if (!local) {
+      state.suggestions.push({
+        id: remote.id,
+        household_id: remote.household_id,
+        name: normalizeItemName(remote.name),
+        section: remote.section || "",
+        favourite: Boolean(remote.favourite),
+        use_count: remote.use_count || 1,
+        last_used_at: remote.last_used_at || new Date().toISOString()
+      });
+      changed = true;
+      continue;
+    }
+    local.id = remote.id || local.id;
+    local.section = remote.section || local.section || "";
+    local.favourite = Boolean(remote.favourite);
+    local.use_count = Math.max(local.use_count || 1, remote.use_count || 1);
+    local.last_used_at = remote.last_used_at || local.last_used_at;
+    changed = true;
+  }
+
+  if (changed) {
+    rebuildSuggestionIndex();
+    await persistLocal();
+  }
+}
+
+async function upsertSuggestionRemote(suggestion) {
+  if (!supabase || !suggestion) return;
+  const payload = {
+    id: suggestion.id,
+    household_id: APP_CONFIG.householdId,
+    name: normalizeItemName(suggestion.name),
+    section: suggestion.section || "",
+    favourite: Boolean(suggestion.favourite),
+    use_count: suggestion.use_count || 1,
+    last_used_at: suggestion.last_used_at || new Date().toISOString()
+  };
+  const { data, error } = await supabase
+    .from("suggestion_items")
+    .upsert(payload)
+    .select("id")
+    .single();
+  if (!error && data?.id) suggestion.id = data.id;
+}
+
+async function deleteSuggestionsRemote(removedSuggestions) {
+  if (!supabase || !removedSuggestions?.length) return;
+  for (const suggestion of removedSuggestions) {
+    if (suggestion.id) {
+      await supabase.from("suggestion_items").delete().eq("id", suggestion.id);
+    } else {
+      await supabase
+        .from("suggestion_items")
+        .delete()
+        .eq("household_id", APP_CONFIG.householdId)
+        .ilike("name", suggestion.name);
+    }
+  }
 }
 
 async function persistLocal() {

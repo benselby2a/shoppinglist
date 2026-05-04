@@ -4,10 +4,10 @@ Static vanilla JS PWA with Supabase realtime + offline queue.
 
 ## Local run
 
-Use any static server from `app/`, for example:
+Use any static server from the project root, for example:
 
 ```bash
-cd app
+cd .
 python3 -m http.server 4173
 ```
 
