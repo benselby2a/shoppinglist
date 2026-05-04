@@ -367,6 +367,9 @@ body.add-panel-collapsed .add-fab-btn {
   gap: 10px;
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.25);
 }
+.release-banner[hidden] {
+  display: none !important;
+}
 .release-banner button {
   border: 0;
   border-radius: 999px;
