@@ -14,8 +14,8 @@ const SECTIONS = [
   "Canned Good and Spices",
   "Snacks",
   "Drinks",
-  "Cereal",
   "Coffee and Tea",
+  "Cereal",
   "Bakery",
   "Frozen",
   "Household and Cleaning",
@@ -104,7 +104,7 @@ async function init() {
     if (!document.hidden) syncNow();
   });
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js");
+    navigator.serviceWorker.register("/sw.js");
   }
 }
 
@@ -152,11 +152,12 @@ function bindEvents() {
     };
     state.items.push(item);
     captureUndo("add", { id: item.id });
+    // Render immediately so offline users see the item instantly.
+    render();
     await enqueue("upsert", item);
     await upsertSuggestion(name, item.section);
     el.addForm.reset();
     renderSuggestions();
-    render();
     syncNow();
   });
 
@@ -193,7 +194,10 @@ function bindEvents() {
 
 function render() {
   const grouped = new Map(SECTIONS.map((s) => [s, []]));
-  for (const item of state.items.filter((i) => !i.checked && !i.deleted_at)) grouped.get(item.section)?.push(item);
+  for (const item of state.items.filter((i) => !i.checked && !i.deleted_at)) {
+    const section = getEffectiveSection(item);
+    grouped.get(section)?.push(item);
+  }
 
   el.sectionsContainer.innerHTML = "";
   for (const section of SECTIONS) {
@@ -208,6 +212,17 @@ function render() {
   }
 
   renderSyncBar();
+}
+
+function getEffectiveSection(item) {
+  const itemKey = canonicalNameKey(item.name);
+  if (!itemKey) return normalizeSection(item.section) || SECTIONS[0];
+
+  const suggestion = state.suggestions.find((s) => canonicalNameKey(s.name) === itemKey);
+  const suggestionSection = normalizeSection(suggestion?.section || "");
+  if (suggestionSection) return suggestionSection;
+
+  return normalizeSection(item.section) || SECTIONS[0];
 }
 
 function itemRow(item) {
@@ -647,7 +662,8 @@ async function upsertSuggestion(name, section) {
   }
   rebuildSuggestionIndex();
   await persistLocal();
-  await upsertSuggestionRemote(existing || state.suggestions[state.suggestions.length - 1]);
+  // Best-effort remote sync; do not block local UX when offline.
+  upsertSuggestionRemote(existing || state.suggestions[state.suggestions.length - 1]).catch(() => {});
 }
 
 async function seedSuggestionsFromItems() {

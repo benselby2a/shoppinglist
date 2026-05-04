@@ -1,9 +1,0 @@
-{
-  "name": "Shopping List",
-  "short_name": "ShopList",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#f3efe6",
-  "theme_color": "#f3efe6",
-  "icons": []
-}
