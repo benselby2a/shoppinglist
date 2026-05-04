@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3efe6" />
+    <title>Shopping List</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Shopping List</h1>
+          <p id="household-label">Household: Shared</p>
+        </div>
+        <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙</button>
+      </header>
+
+      <section id="sync-bar" class="sync-bar sync-offline">
+        <span id="sync-text">Offline</span>
+        <span id="sync-meta">0 pending · 0 conflicts</span>
+      </section>
+
+      <section class="card add-card">
+        <form id="add-form">
+          <input id="item-name" placeholder="Add milk, bananas..." required autocomplete="off" />
+          <div class="row">
+            <select id="item-section"></select>
+            <input id="item-qty" placeholder="Qty" />
+            <button type="submit">Add Item</button>
+          </div>
+          <ul id="suggestions" class="suggestions" hidden></ul>
+        </form>
+      </section>
+
+      <main>
+        <div id="sections-container"></div>
+      </main>
+
+      <footer class="footer-actions">
+        <label class="file-btn">
+          Import .txt
+          <input id="import-file" type="file" accept=".txt,text/plain" />
+        </label>
+        <button id="sync-now-btn" type="button">Sync now</button>
+        <button id="show-checked-btn" type="button">Checked Items</button>
+      </footer>
+    </div>
+
+    <div id="checked-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Checked Items</h2>
+          <button id="close-checked-btn" class="icon-btn" type="button">✕</button>
+        </div>
+        <ul id="checked-list"></ul>
+      </div>
+    </div>
+
+    <div id="undo-toast" class="toast" hidden>
+      <span id="undo-message">Action completed</span>
+      <button id="undo-btn" type="button">Undo</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
