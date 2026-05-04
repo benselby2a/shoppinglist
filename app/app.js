@@ -587,16 +587,10 @@ function showDbFeedback(message) {
 
 async function initSupabase() {
   if (!APP_CONFIG.supabaseUrl || !APP_CONFIG.supabaseAnonKey) return;
-
-  supabase = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
-  supabase
-    .channel("shopping_items_changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "shopping_items", filter: `household_id=eq.${APP_CONFIG.householdId}` },
-      (payload) => applyRemote(payload.new)
-    )
-    .subscribe();
+  supabase = {
+    url: APP_CONFIG.supabaseUrl,
+    anonKey: APP_CONFIG.supabaseAnonKey
+  };
 }
 
 function applyRemote(remote) {
@@ -673,7 +667,7 @@ async function syncNow() {
 
   while (state.pending.length) {
     const op = state.pending[0];
-    const { error } = await supabase.from("shopping_items").upsert(op.payload);
+    const { error } = await apiUpsert("shopping_items", op.payload);
     if (error) {
       state.lastSyncError = `sync failed: ${error.message}`;
       break;
@@ -682,11 +676,11 @@ async function syncNow() {
     await persistLocal();
   }
 
-  const { data, error } = await supabase
-    .from("shopping_items")
-    .select("*")
-    .eq("household_id", APP_CONFIG.householdId)
-    .is("deleted_at", null);
+  const { data, error } = await apiSelect("shopping_items", {
+    columns: "*",
+    eq: { household_id: APP_CONFIG.householdId },
+    is: { deleted_at: "null" }
+  });
   state.supabaseReachable = !error;
   state.online = !error;
   state.lastSyncError = error ? `connect failed: ${error.message}` : "";
@@ -960,10 +954,10 @@ async function loadLocal() {
 
 async function syncSuggestionsFromRemote() {
   if (!supabase) return;
-  const { data, error } = await supabase
-    .from("suggestion_items")
-    .select("*")
-    .eq("household_id", APP_CONFIG.householdId);
+  const { data, error } = await apiSelect("suggestion_items", {
+    columns: "*",
+    eq: { household_id: APP_CONFIG.householdId }
+  });
   if (error || !data) return;
 
   let changed = false;
@@ -1009,26 +1003,90 @@ async function upsertSuggestionRemote(suggestion) {
     use_count: suggestion.use_count || 1,
     last_used_at: suggestion.last_used_at || new Date().toISOString()
   };
-  const { data, error } = await supabase
-    .from("suggestion_items")
-    .upsert(payload)
-    .select("id")
-    .single();
-  if (!error && data?.id) suggestion.id = data.id;
+  const { error } = await apiUpsert("suggestion_items", payload);
+  if (!error && suggestion.id) return;
+
+  const { data: selected } = await apiSelect("suggestion_items", {
+    columns: "id",
+    eq: {
+      household_id: APP_CONFIG.householdId,
+      name: payload.name
+    }
+  });
+  if (selected?.[0]?.id) suggestion.id = selected[0].id;
 }
 
 async function deleteSuggestionsRemote(removedSuggestions) {
   if (!supabase || !removedSuggestions?.length) return;
   for (const suggestion of removedSuggestions) {
     if (suggestion.id) {
-      await supabase.from("suggestion_items").delete().eq("id", suggestion.id);
+      await apiDelete("suggestion_items", { eq: { id: suggestion.id } });
     } else {
-      await supabase
-        .from("suggestion_items")
-        .delete()
-        .eq("household_id", APP_CONFIG.householdId)
-        .ilike("name", suggestion.name);
+      await apiDelete("suggestion_items", {
+        eq: { household_id: APP_CONFIG.householdId },
+        ilike: { name: suggestion.name }
+      });
     }
+  }
+}
+
+async function apiUpsert(table, payload) {
+  return apiRequest({
+    table,
+    method: "POST",
+    query: { on_conflict: "id" },
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: Array.isArray(payload) ? payload : [payload]
+  });
+}
+
+async function apiSelect(table, { columns = "*", eq = {}, is = {}, ilike = {} } = {}) {
+  const query = { select: columns };
+  for (const [key, value] of Object.entries(eq)) query[key] = `eq.${encodeFilterValue(value)}`;
+  for (const [key, value] of Object.entries(is)) query[key] = `is.${value}`;
+  for (const [key, value] of Object.entries(ilike)) query[key] = `ilike.${encodeFilterValue(value)}`;
+  return apiRequest({ table, method: "GET", query });
+}
+
+async function apiDelete(table, { eq = {}, ilike = {} } = {}) {
+  const query = {};
+  for (const [key, value] of Object.entries(eq)) query[key] = `eq.${encodeFilterValue(value)}`;
+  for (const [key, value] of Object.entries(ilike)) query[key] = `ilike.${encodeFilterValue(value)}`;
+  return apiRequest({ table, method: "DELETE", query });
+}
+
+function encodeFilterValue(value) {
+  return String(value).replaceAll(",", "\\,");
+}
+
+async function apiRequest({ table, method, query = {}, headers = {}, body }) {
+  if (!supabase) return { data: null, error: { message: "Supabase not configured" } };
+  const qs = new URLSearchParams(query).toString();
+  const url = `${supabase.url}/rest/v1/${table}${qs ? `?${qs}` : ""}`;
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        apikey: supabase.anonKey,
+        Authorization: `Bearer ${supabase.anonKey}`,
+        "Content-Type": "application/json",
+        ...headers
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+
+    let data = null;
+    const text = await res.text();
+    if (text) {
+      try { data = JSON.parse(text); } catch { data = null; }
+    }
+
+    if (!res.ok) {
+      return { data: null, error: { message: data?.message || data?.error || `${res.status} ${res.statusText}` } };
+    }
+    return { data, error: null };
+  } catch (err) {
+    return { data: null, error: { message: err?.message || "network error" } };
   }
 }
 
