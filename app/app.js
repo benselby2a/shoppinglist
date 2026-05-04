@@ -524,7 +524,7 @@ function acknowledgeConflict() {
 
 function showCheckToast(itemName) {
   if (checkToastTimer) clearTimeout(checkToastTimer);
-  el.checkToastText.textContent = itemName ? `Checked: ${itemName}` : "Checked Item";
+  el.checkToastText.textContent = "Tap to Undo";
   el.checkToast.hidden = false;
   checkToastTimer = setTimeout(hideCheckToast, 3000);
 }
@@ -681,13 +681,13 @@ function hasMaterialDifference(a, b) {
 
 function describeRemoteResolution(local, remote) {
   const label = remote.name || local.name || "item";
-  if (!local.deleted_at && remote.deleted_at) return `Conflict on "${label}": it will be removed based on the latest update.`;
-  if (!local.checked && remote.checked) return `Conflict on "${label}": it will be marked checked and removed from the active list.`;
-  if (local.checked && !remote.checked) return `Conflict on "${label}": it will be restored to the active list.`;
-  if (local.section !== remote.section) return `Conflict on "${label}": section will change to ${remote.section}.`;
-  if (local.quantity_text !== remote.quantity_text) return `Conflict on "${label}": quantity will change to "${remote.quantity_text || "none"}".`;
-  if (local.name !== remote.name) return `Conflict: item will be renamed to "${remote.name}".`;
-  return `Conflict on "${label}": latest update will be applied.`;
+  if (!local.deleted_at && remote.deleted_at) return `${label}: removed`;
+  if (!local.checked && remote.checked) return `${label}: marked checked`;
+  if (local.checked && !remote.checked) return `${label}: restored to active list`;
+  if (local.section !== remote.section) return `${label}: section updated to ${remote.section}`;
+  if (local.quantity_text !== remote.quantity_text) return `${label}: quantity updated to ${remote.quantity_text || "none"}`;
+  if (local.name !== remote.name) return `${local.name || "Item"}: renamed to ${remote.name}`;
+  return `${label}: updated to latest version`;
 }
 
 async function enqueue(type, payload) {

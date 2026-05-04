@@ -1,12 +1,12 @@
 :root {
-  --bg: #f3efe6;
-  --surface: #fffdf8;
-  --text: #1e2224;
-  --muted: #636d73;
-  --brand: #1f6f5f;
-  --warn: #b45309;
-  --danger: #b91c1c;
-  --border: #dfd8ca;
+  --bg: #f5efe3;
+  --surface: #fffaf0;
+  --text: #0f3554;
+  --muted: #5a7488;
+  --brand: #0077b6;
+  --warn: #c7902d;
+  --danger: #b9473f;
+  --border: #cddfea;
 }
 * { box-sizing: border-box; }
 button, input, select {
@@ -17,7 +17,7 @@ button, input, select {
 body {
   margin: 0;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
-  background: linear-gradient(180deg, #faf6ef, var(--bg));
+  background: linear-gradient(180deg, #fff7ea, #e8f5ff 42%, var(--bg));
   color: var(--text);
 }
 .app-shell { max-width: 860px; margin: 0 auto; padding: 12px; }
@@ -76,17 +76,17 @@ body {
   justify-content: space-between;
   font-size: 0.95rem;
 }
-.sync-online { background: #ddf4ea; color: #14532d; }
-.sync-offline { background: #fde9c8; color: #7c2d12; }
-.sync-syncing { background: #dbeafe; color: #1e3a8a; }
-.sync-conflict { background: #fee2e2; color: #7f1d1d; }
+.sync-online { background: #dff4ff; color: #0f4f77; }
+.sync-offline { background: #fff1d7; color: #8a6523; }
+.sync-syncing { background: #e7f3ff; color: #1d5b84; }
+.sync-conflict { background: #ffe5df; color: #8b2d2a; }
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px;
   margin-bottom: 14px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
+  box-shadow: 0 6px 18px rgb(14 70 112 / 0.09);
 }
 .add-card input, .add-card select, .add-card button {
   width: 100%;
@@ -103,9 +103,9 @@ body {
   z-index: 10;
   margin-top: 12px;
   margin-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, #eef8ff 0%, #dff1ff 100%);
-  border: 1px solid #9ecae6;
-  box-shadow: 0 10px 24px rgb(30 64 175 / 0.18);
+  background: linear-gradient(180deg, #e5f4ff 0%, #d2ebff 100%);
+  border: 1px solid #95c2e0;
+  box-shadow: 0 10px 26px rgb(0 83 131 / 0.18);
   padding: 20px;
 }
 .add-card.is-collapsed form {
@@ -174,7 +174,7 @@ body {
   height: 40px;
   border: 1px solid #f2caca;
   border-radius: 10px;
-  background: #fff5f5;
+  background: #fff3f1;
   font-size: 1rem;
 }
 .db-actions {
@@ -195,19 +195,19 @@ body {
   transition: transform 80ms ease, box-shadow 120ms ease, background-color 120ms ease, filter 120ms ease;
 }
 .db-fav-btn {
-  color: #a16207;
-  background: #fff8dc;
-  border-color: #ecd38a;
+  color: #9f6c0d;
+  background: #fff6dd;
+  border-color: #efd79a;
 }
 .db-uncheck-btn {
-  color: #1d4ed8;
-  background: #eef4ff;
-  border-color: #b9cdfb;
+  color: #0d5f90;
+  background: #e8f5ff;
+  border-color: #b8dbf2;
 }
 .db-delete-btn {
-  color: #b91c1c;
-  background: #fff1f1;
-  border-color: #f4bcbc;
+  color: #b5423c;
+  background: #fff0ec;
+  border-color: #f4c2b9;
 }
 .db-icon-btn:hover {
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
@@ -313,7 +313,7 @@ main { padding-bottom: 0; }
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
-  background: #111827;
+  background: #123047;
   color: #fff;
   border-radius: 999px;
   padding: 8px 12px;
@@ -334,7 +334,7 @@ main { padding-bottom: 0; }
   height: 44px;
   border: 0;
   border-radius: 999px;
-  background: #0f766e;
+  background: #0077b6;
   color: #fff;
   font-size: 1.5rem;
   line-height: 1;
@@ -363,7 +363,7 @@ body.add-panel-collapsed .add-fab-btn {
   transform: translateX(-50%);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   z-index: 1200;
-  background: #111827;
+  background: #0f3554;
   color: #fff;
   border-radius: 999px;
   padding: 8px 10px;
