@@ -127,26 +127,12 @@ body {
 }
 .add-layout {
   display: grid;
-  grid-template-columns: 1fr 170px;
-  grid-template-rows: auto auto;
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: stretch;
 }
-.add-item-input {
-  grid-column: 1;
-  grid-row: 1;
-}
-.add-lower-left {
-  grid-column: 1;
-  grid-row: 2;
-  display: grid;
-  grid-template-columns: 1fr 140px;
-  gap: 12px;
-}
 .add-submit-btn {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  min-height: 128px;
+  min-height: 64px;
   align-self: stretch;
 }
 .suggestions { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--border); }
@@ -335,53 +321,79 @@ main { padding-bottom: 0; }
   align-items: center;
   gap: 10px;
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.25);
+  cursor: pointer;
 }
 .check-toast[hidden] {
   display: none !important;
-}
-.check-toast button {
-  border: 0;
-  border-radius: 999px;
-  padding: 5px 9px;
-  font-weight: 600;
 }
 .add-fab-btn {
   position: fixed;
   right: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: 112px;
-  height: 112px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 999px;
   background: #0f766e;
   color: #fff;
-  font-size: 4rem;
+  font-size: 1.5rem;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 10px 20px rgb(15 118 110 / 0.35);
   z-index: 999;
+  display: none;
 }
 .add-fab-btn:active {
   transform: scale(0.95);
 }
-@media (max-width: 720px) {
+body.add-panel-collapsed .add-fab-btn {
+  display: inline-flex;
+}
+@media (max-width: 900px) {
   .app-shell { padding: 14px; }
-  .add-layout {
-    grid-template-columns: 1fr 140px;
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
   }
-  .add-lower-left {
-    grid-template-columns: 1fr 110px;
-    gap: 10px;
+  .topbar > div:first-child {
+    width: 100%;
   }
+  .add-layout { gap: 10px; }
+  #item-section { width: 100%; }
   .footer-actions { flex-wrap: wrap; }
   .topbar-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
+    width: 100%;
   }
   .topbar-actions .icon-btn {
-    min-height: 46px;
-    font-size: 0.92rem;
+    min-height: 48px;
+    font-size: 0.95rem;
+    width: 100%;
+  }
+  .add-submit-btn {
+    min-height: 58px;
+  }
+  .add-fab-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 1.35rem;
+    right: 14px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  #checked-modal .item-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  #checked-modal .db-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  #checked-modal .db-icon-btn {
+    width: 44px;
+    height: 44px;
   }
 }

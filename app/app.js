@@ -84,7 +84,6 @@ const el = {
   topUndoBtn: document.getElementById("top-undo-btn"),
   checkToast: document.getElementById("check-toast"),
   checkToastText: document.getElementById("check-toast-text"),
-  checkToastUndoBtn: document.getElementById("check-toast-undo-btn"),
   conflictModal: document.getElementById("conflict-modal"),
   closeConflictBtn: document.getElementById("close-conflict-btn"),
   resolveConflictBtn: document.getElementById("resolve-conflict-btn"),
@@ -193,7 +192,7 @@ function bindEvents() {
     if (!state.lastAction) return;
     await undoLastAction();
   });
-  el.checkToastUndoBtn.addEventListener("click", async () => {
+  el.checkToast.addEventListener("click", async () => {
     if (!state.lastAction) return;
     await undoLastAction();
     hideCheckToast();
@@ -477,9 +476,10 @@ function restoreAddCardState() {
 
 function setAddCardCollapsed(collapsed) {
   el.addCard.classList.toggle("is-collapsed", collapsed);
-  el.addFabBtn.textContent = collapsed ? "＋" : "－";
-  el.addFabBtn.setAttribute("aria-label", collapsed ? "Show add new item panel" : "Hide add new item panel");
-  el.addFabBtn.hidden = false;
+  document.body.classList.toggle("add-panel-collapsed", collapsed);
+  el.addFabBtn.textContent = "＋";
+  el.addFabBtn.setAttribute("aria-label", "Show add new item panel");
+  el.addFabBtn.hidden = !collapsed;
   localStorage.setItem(ADD_CARD_COLLAPSED_KEY, String(collapsed));
 }
 
@@ -495,22 +495,19 @@ function renderSyncBar() {
   const pendingCount = state.pending.length;
   const hasError = Boolean(state.lastSyncError);
   const effectivelyOnline = state.online && (supabase ? state.supabaseReachable : true);
+  const offlineOrUnreachable = !effectivelyOnline;
 
   el.syncBar.className = "sync-bar " +
-    (hasError ? "sync-conflict" : effectivelyOnline ? "sync-online" : "sync-offline");
+    ((hasError || offlineOrUnreachable) ? "sync-conflict" : "sync-online");
 
-  el.syncText.textContent = hasError
+  el.syncText.textContent = (hasError || offlineOrUnreachable)
     ? "Sync warning"
     : state.syncing
       ? "Checking..."
-      : effectivelyOnline
-        ? "Online"
-        : "No connection, will sync once signal is available";
+      : "Online";
 
-  if (pendingCount > 0) {
+  if (offlineOrUnreachable || hasError || pendingCount > 0) {
     el.syncMeta.textContent = `${pendingCount} items will sync once you have connectivity`;
-  } else if (state.lastSyncError) {
-    el.syncMeta.textContent = state.lastSyncError;
   } else if (state.lastSyncAt) {
     const time = new Date(state.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     el.syncMeta.textContent = `Last update: ${time}`;
