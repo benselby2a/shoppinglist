@@ -27,3 +27,6 @@
 - Keep IndexedDB schema backward compatible (`state` object store)
 - Do not reintroduce runtime CDN dependency for core app logic
 
+## Release Rule (Mandatory)
+- On every app change, always bump `CACHE_VERSION` in `/sw.js`.
+- Do this automatically as part of the change set; do not ask for confirmation.
