@@ -1,4 +1,4 @@
-const CACHE_VERSION = "msl-shell-v1";
+const CACHE_VERSION = "msl-shell-v7";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -12,7 +12,11 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
-      await cache.addAll(SHELL_ASSETS);
+      for (const asset of SHELL_ASSETS) {
+        const req = new Request(asset, { cache: "reload" });
+        const res = await fetch(req);
+        await cache.put(asset, res);
+      }
       await self.skipWaiting();
     })()
   );

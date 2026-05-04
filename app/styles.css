@@ -343,13 +343,35 @@ main { padding-bottom: 0; }
   justify-content: center;
   box-shadow: 0 10px 20px rgb(15 118 110 / 0.35);
   z-index: 999;
-  display: none;
 }
 .add-fab-btn:active {
   transform: scale(0.95);
 }
 body.add-panel-collapsed .add-fab-btn {
+  width: 76px;
+  height: 76px;
+  font-size: 2.6rem;
+}
+.release-banner {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 1200;
+  background: #111827;
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 10px;
   display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.25);
+}
+.release-banner button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 700;
 }
 @media (max-width: 900px) {
   .app-shell { padding: 14px; }
@@ -380,8 +402,13 @@ body.add-panel-collapsed .add-fab-btn {
     width: 40px;
     height: 40px;
     font-size: 1.35rem;
+  }
+  body.add-panel-collapsed .add-fab-btn {
     right: 14px;
     bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: 64px;
+    height: 64px;
+    font-size: 2.1rem;
   }
   #checked-modal .item-row {
     grid-template-columns: 1fr;
