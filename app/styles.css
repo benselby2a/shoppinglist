@@ -327,9 +327,7 @@ main { padding-bottom: 0; }
   display: none !important;
 }
 .add-fab-btn {
-  position: fixed;
-  right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  position: static;
   width: 44px;
   height: 44px;
   border: 0;
@@ -343,14 +341,20 @@ main { padding-bottom: 0; }
   justify-content: center;
   box-shadow: 0 10px 20px rgb(15 118 110 / 0.35);
   z-index: 999;
+  margin-left: auto;
+  margin-top: 8px;
 }
 .add-fab-btn:active {
   transform: scale(0.95);
 }
 body.add-panel-collapsed .add-fab-btn {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   width: 76px;
   height: 76px;
   font-size: 2.6rem;
+  margin: 0;
 }
 .release-banner {
   position: fixed;
