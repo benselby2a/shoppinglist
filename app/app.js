@@ -97,6 +97,7 @@ let supabase = null;
 let suggestionTimer = null;
 let lastSuggestionQuery = "";
 let checkToastTimer = null;
+let checkToastMode = "undo";
 let dbFeedbackTimer = null;
 
 init();
@@ -119,7 +120,7 @@ async function init() {
   });
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js");
+    navigator.serviceWorker.register("./sw.js");
   }
 }
 
@@ -158,15 +159,17 @@ function bindEvents() {
     }
     el.checkedModal.classList.add("is-open");
     el.appShell.classList.add("modal-focus");
-    el.showCheckedBtn.textContent = "Hide Item Database";
+    el.showCheckedBtn.textContent = "Hide item database";
     renderCheckedModal();
   });
 
   el.closeCheckedBtn.addEventListener("click", closeCheckedModal);
 
   el.checkToast.addEventListener("click", async () => {
-    if (!state.lastAction) return;
-    await undoLastAction();
+    if (checkToastMode === "undo") {
+      if (!state.lastAction) return;
+      await undoLastAction();
+    }
     hideCheckToast();
   });
 
@@ -198,6 +201,10 @@ async function onAddItemSubmit(e) {
   const rawName = normalizeItemName(el.itemName.value);
   const name = autoCorrectItemName(rawName);
   if (!name) return;
+  if (isActiveDuplicateName(name)) {
+    showDuplicateToast(name);
+    return;
+  }
 
   const item = {
     id: crypto.randomUUID(),
@@ -218,6 +225,7 @@ async function onAddItemSubmit(e) {
 
   el.addForm.reset();
   renderSuggestions();
+  setAddCardCollapsed(true);
   syncNow();
 }
 
@@ -255,7 +263,7 @@ function itemRow(item) {
     <button class="delete-btn" type="button" aria-label="Remove ${escapeHtml(item.name)}">✕</button>
   `;
 
-  row.querySelector(".item-name").textContent = item.name;
+  row.querySelector(".item-name").textContent = isBigShopItem(item) ? `🛒 ${item.name}` : item.name;
   row.querySelector(".item-qty").textContent = item.quantity_text || "";
 
   row.querySelector(".item-main-btn").addEventListener("click", () => {
@@ -293,10 +301,12 @@ function renderCheckedModal() {
         name: s.name,
         section: s.section || "",
         favourite: Boolean(s.favourite),
+        big_shop: Boolean(s.big_shop),
         checkedItem: null
       });
-    } else if (s.favourite) {
-      byKey.get(key).favourite = true;
+    } else {
+      if (s.favourite) byKey.get(key).favourite = true;
+      if (s.big_shop) byKey.get(key).big_shop = true;
     }
   }
 
@@ -308,6 +318,7 @@ function renderCheckedModal() {
         name: item.name,
         section: item.section || "",
         favourite: false,
+        big_shop: false,
         checkedItem: item
       });
     } else {
@@ -339,7 +350,6 @@ function renderCheckedModal() {
 
     sectionSelect.addEventListener("change", async () => {
       await updateEntrySection(entry.name, sectionSelect.value);
-      showDbFeedback(`Section set to ${sectionSelect.value}`);
       renderCheckedModal();
       render();
       syncNow();
@@ -355,10 +365,29 @@ function renderCheckedModal() {
     favBtn.setAttribute("aria-label", favBtn.title);
     favBtn.addEventListener("click", async () => {
       await setFavourite(entry.name, !entry.favourite, entry.section);
-      showDbFeedback(entry.favourite ? "Removed from favourites" : "Added to favourites");
       renderCheckedModal();
     });
     actions.appendChild(favBtn);
+
+    const bigShopBtn = document.createElement("button");
+    bigShopBtn.type = "button";
+    bigShopBtn.className = "db-icon-btn db-big-shop-btn";
+    bigShopBtn.textContent = "🛒";
+    bigShopBtn.title = entry.big_shop ? "Remove from Big Shop" : "Mark as Big Shop";
+    bigShopBtn.setAttribute("aria-label", bigShopBtn.title);
+    if (entry.big_shop) bigShopBtn.classList.add("is-active");
+    bigShopBtn.addEventListener("click", async () => {
+      const previousWindowScrollY = window.scrollY;
+      const checkedModalContent = el.checkedModal.querySelector(".modal-content");
+      const previousScrollTop = checkedModalContent ? checkedModalContent.scrollTop : 0;
+      await setBigShop(entry.name, !entry.big_shop, entry.section);
+      renderCheckedModal();
+      const nextCheckedModalContent = el.checkedModal.querySelector(".modal-content");
+      if (nextCheckedModalContent) nextCheckedModalContent.scrollTop = previousScrollTop;
+      window.scrollTo(0, previousWindowScrollY);
+      render();
+    });
+    actions.appendChild(bigShopBtn);
 
     if (entry.checkedItem) {
       const uncheckBtn = document.createElement("button");
@@ -373,7 +402,6 @@ function renderCheckedModal() {
         entry.checkedItem.updated_at = new Date().toISOString();
         captureUndo("uncheck", prev);
         await enqueue("upsert", entry.checkedItem);
-        showDbFeedback("Item unchecked");
         renderCheckedModal();
         render();
         syncNow();
@@ -391,7 +419,6 @@ function renderCheckedModal() {
       const confirmed = window.confirm(`Delete "${entry.name}" from Item Database? This removes it from autocomplete.`);
       if (!confirmed) return;
       await deleteDatabaseEntry(entry.name);
-      showDbFeedback("Item deleted");
       renderCheckedModal();
       render();
       syncNow();
@@ -405,35 +432,14 @@ function renderCheckedModal() {
 function closeCheckedModal() {
   el.checkedModal.classList.remove("is-open");
   el.appShell.classList.remove("modal-focus");
-  el.showCheckedBtn.textContent = "Show Item Database";
+  el.showCheckedBtn.textContent = "Show item database";
 }
 
 function renderSuggestions() {
   const q = el.itemName.value.trim().toLowerCase();
   applySectionGuess(q);
-
-  if (q.length < 3) {
-    lastSuggestionQuery = q;
-    el.itemOptions.innerHTML = "";
-    return;
-  }
-
-  if (q === lastSuggestionQuery && el.itemOptions.children.length > 0) return;
   lastSuggestionQuery = q;
-
-  const matches = state.suggestionIndex
-    .filter((s) => s.nameLower.includes(q))
-    .sort((a, b) => {
-      const aStarts = a.nameLower.startsWith(q) ? 0 : 1;
-      const bStarts = b.nameLower.startsWith(q) ? 0 : 1;
-      if (aStarts !== bStarts) return aStarts - bStarts;
-      return b.use_count - a.use_count;
-    })
-    .slice(0, 20);
-
-  el.itemOptions.innerHTML = matches
-    .map((s) => `<option value="${escapeHtml(s.name)}"></option>`)
-    .join("");
+  el.itemOptions.innerHTML = "";
 }
 
 function scheduleSuggestionsRender() {
@@ -524,14 +530,31 @@ function acknowledgeConflict() {
 
 function showCheckToast(itemName) {
   if (checkToastTimer) clearTimeout(checkToastTimer);
-  el.checkToastText.textContent = "Tap to Undo";
+  checkToastMode = "undo";
+  el.checkToast.classList.remove("is-error");
+  el.checkToast.style.cursor = "pointer";
+  const label = itemName ? String(itemName).trim() : "item";
+  el.checkToastText.textContent = `Tap to undo ${label}`;
   el.checkToast.hidden = false;
   checkToastTimer = setTimeout(hideCheckToast, 3000);
+}
+
+function showDuplicateToast(itemName) {
+  if (checkToastTimer) clearTimeout(checkToastTimer);
+  checkToastMode = "info";
+  el.checkToast.classList.add("is-error");
+  el.checkToast.style.cursor = "default";
+  el.checkToastText.textContent = `${itemName} is already on your list`;
+  el.checkToast.hidden = false;
+  checkToastTimer = setTimeout(hideCheckToast, 2600);
 }
 
 function hideCheckToast() {
   if (checkToastTimer) clearTimeout(checkToastTimer);
   checkToastTimer = null;
+  checkToastMode = "undo";
+  el.checkToast.classList.remove("is-error");
+  el.checkToast.style.cursor = "pointer";
   el.checkToast.hidden = true;
 }
 
@@ -785,6 +808,38 @@ async function setFavourite(name, favourite, fallbackSection = "") {
   }
 }
 
+async function setBigShop(name, bigShop, fallbackSection = "") {
+  const key = canonicalNameKey(name);
+  if (!key) return;
+
+  let found = false;
+  for (const s of state.suggestions) {
+    if (canonicalNameKey(s.name) !== key) continue;
+    s.big_shop = bigShop;
+    if (!s.section && fallbackSection) s.section = fallbackSection;
+    found = true;
+  }
+
+  if (!found) {
+    state.suggestions.push({
+      id: crypto.randomUUID(),
+      household_id: APP_CONFIG.householdId,
+      name: normalizeItemName(name),
+      section: fallbackSection || "",
+      use_count: 1,
+      last_used_at: new Date().toISOString(),
+      favourite: false,
+      big_shop: bigShop
+    });
+  }
+
+  rebuildSuggestionIndex();
+  await persistLocal();
+  for (const s of state.suggestions.filter((x) => canonicalNameKey(x.name) === key)) {
+    await upsertSuggestionRemote(s);
+  }
+}
+
 async function updateEntrySection(name, newSection) {
   const section = normalizeSection(newSection) || SECTIONS[0];
   const key = canonicalNameKey(name);
@@ -886,6 +941,7 @@ async function syncSuggestionsFromRemote() {
         name: normalizeItemName(remote.name),
         section: remote.section || "",
         favourite: Boolean(remote.favourite),
+        big_shop: Boolean(remote.big_shop),
         use_count: remote.use_count || 1,
         last_used_at: remote.last_used_at || new Date().toISOString()
       });
@@ -896,6 +952,7 @@ async function syncSuggestionsFromRemote() {
     local.id = remote.id || local.id;
     local.section = remote.section || local.section || "";
     local.favourite = Boolean(remote.favourite);
+    local.big_shop = Boolean(remote.big_shop);
     local.use_count = Math.max(local.use_count || 1, remote.use_count || 1);
     local.last_used_at = remote.last_used_at || local.last_used_at;
     changed = true;
@@ -916,6 +973,7 @@ async function upsertSuggestionRemote(suggestion) {
     name: normalizeItemName(suggestion.name),
     section: suggestion.section || "",
     favourite: Boolean(suggestion.favourite),
+    big_shop: Boolean(suggestion.big_shop),
     use_count: suggestion.use_count || 1,
     last_used_at: suggestion.last_used_at || new Date().toISOString()
   };
@@ -951,6 +1009,29 @@ function rebuildSuggestionIndex() {
     nameLower: (s.name || "").toLowerCase(),
     use_count: s.use_count || 0
   }));
+}
+
+function getActiveUncheckedNameKeys() {
+  const keys = new Set();
+  for (const item of state.items) {
+    if (item.deleted_at || item.checked) continue;
+    const key = canonicalNameKey(item.name);
+    if (!key) continue;
+    keys.add(key);
+  }
+  return keys;
+}
+
+function isActiveDuplicateName(name) {
+  const key = canonicalNameKey(name);
+  if (!key) return false;
+  return getActiveUncheckedNameKeys().has(key);
+}
+
+function isBigShopItem(item) {
+  const key = canonicalNameKey(item?.name);
+  if (!key) return false;
+  return state.suggestions.some((s) => canonicalNameKey(s.name) === key && Boolean(s.big_shop));
 }
 
 async function loadLocal() {

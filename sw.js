@@ -1,21 +1,22 @@
-const CACHE_VERSION = "msl-shell-v19";
+const CACHE_VERSION = "msl-shell-v34";
 const SHELL_ASSETS = [
-  "/",
-  "/index.html",
-  "/app/styles.css",
-  "/app/app.js",
-  "/manifest.webmanifest",
-  "/icons/icon.svg"
+  "./",
+  "./index.html",
+  "./app/styles.css",
+  "./app/app.js",
+  "./manifest.webmanifest",
+  "./icons/icon.svg"
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
+      const scopeUrl = new URL(self.registration.scope);
       for (const asset of SHELL_ASSETS) {
-        const req = new Request(asset, { cache: "reload" });
+        const req = new Request(new URL(asset, scopeUrl).toString(), { cache: "reload" });
         const res = await fetch(req);
-        await cache.put(asset, res);
+        await cache.put(req, res);
       }
       await self.skipWaiting();
     })()
@@ -37,14 +38,24 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
   const isSameOrigin = url.origin === self.location.origin;
+  const scopePath = new URL(self.registration.scope).pathname.replace(/\/$/, "");
+  const withinScope = url.pathname.startsWith(scopePath);
+  const relPath = withinScope ? url.pathname.slice(scopePath.length) || "/" : url.pathname;
 
   // Never cache Supabase API responses here; let app-level sync own data flow.
-  if (!isSameOrigin || url.pathname.startsWith("/rest/v1/") || url.pathname.startsWith("/realtime/")) {
+  if (!isSameOrigin || relPath.startsWith("/rest/v1/") || relPath.startsWith("/realtime/")) {
     return;
   }
 
   // Cache-first for app shell assets.
-  if (SHELL_ASSETS.includes(url.pathname) || url.pathname === "/") {
+  if (
+    relPath === "/" ||
+    relPath === "/index.html" ||
+    relPath === "/app/styles.css" ||
+    relPath === "/app/app.js" ||
+    relPath === "/manifest.webmanifest" ||
+    relPath === "/icons/icon.svg"
+  ) {
     event.respondWith(
       (async () => {
         const cached = await caches.match(event.request);
@@ -68,7 +79,9 @@ self.addEventListener("fetch", (event) => {
         return fresh;
       } catch {
         const cached = await caches.match(event.request);
-        return cached || caches.match("/index.html");
+        if (cached) return cached;
+        const fallbackReq = new Request(new URL("./index.html", self.registration.scope).toString());
+        return caches.match(fallbackReq);
       }
     })()
   );

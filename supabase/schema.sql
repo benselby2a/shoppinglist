@@ -21,6 +21,7 @@ create table if not exists public.suggestion_items (
   name text not null,
   section text,
   favourite boolean not null default false,
+  big_shop boolean not null default false,
   use_count integer not null default 1,
   last_used_at timestamptz not null default now(),
   created_at timestamptz not null default now()
@@ -28,6 +29,9 @@ create table if not exists public.suggestion_items (
 
 alter table public.suggestion_items
   add column if not exists favourite boolean not null default false;
+
+alter table public.suggestion_items
+  add column if not exists big_shop boolean not null default false;
 
 create unique index if not exists suggestion_unique_per_household
   on public.suggestion_items(household_id, lower(name));
