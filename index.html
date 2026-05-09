@@ -37,16 +37,16 @@
               id="item-entry"
               class="add-item-input"
               name="inventory-entry"
-              list="item-options"
               placeholder="Type Item Here"
               required
-              autocomplete="new-password"
-              autocapitalize="off"
-              autocorrect="on"
-              spellcheck="true"
+              autocomplete="off"
+              autocapitalize="none"
+              autocorrect="off"
+              spellcheck="false"
               inputmode="text"
+              enterkeyhint="done"
             />
-            <datalist id="item-options"></datalist>
+            <div id="item-options" class="item-options" hidden></div>
             <select id="item-section"></select>
             <input id="item-qty" name="shopping-qty" placeholder="Qty" autocomplete="off" />
             <div class="add-flags-row">

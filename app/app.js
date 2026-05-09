@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v77";
+const APP_VERSION = "v86";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -104,6 +104,7 @@ const dbPromise = openDB();
 let supabase = null;
 let suggestionTimer = null;
 let lastSuggestionQuery = "";
+let suggestionActiveIndex = -1;
 let checkToastTimer = null;
 let checkToastMode = "undo";
 let dbFeedbackTimer = null;
@@ -166,6 +167,11 @@ function bindEvents() {
   el.addForm.addEventListener("submit", onAddItemSubmit);
   el.itemName.addEventListener("input", scheduleSuggestionsRender);
   el.itemName.addEventListener("focus", renderSuggestions);
+  el.itemName.addEventListener("keydown", onSuggestionKeyDown);
+  el.itemName.addEventListener("blur", () => {
+    // Allow option tap to register before hiding.
+    setTimeout(hideSuggestions, 120);
+  });
 
   el.topUndoBtn.addEventListener("click", async () => {
     if (!state.lastAction) return;
@@ -260,7 +266,7 @@ async function onAddItemSubmit(e) {
   };
 
   state.items.push(item);
-  captureUndo("add", { id: item.id });
+  captureUndo("add", { id: item.id, name: item.name });
   render();
   enqueue("upsert", item).catch(() => {});
   upsertSuggestion(name, item.section).catch(() => {});
@@ -270,7 +276,7 @@ async function onAddItemSubmit(e) {
 
   el.addForm.reset();
   el.addBigShopCheckbox.checked = true;
-  renderSuggestions();
+  hideSuggestions();
   setAddCardCollapsed(true);
   syncNow();
 }
@@ -534,11 +540,11 @@ function renderSuggestions() {
 
   if (q.length < 3) {
     lastSuggestionQuery = q;
-    el.itemOptions.innerHTML = "";
+    hideSuggestions();
     return;
   }
 
-  if (q === lastSuggestionQuery && el.itemOptions.children.length > 0) return;
+  if (q === lastSuggestionQuery && el.itemOptions.children.length > 0 && !el.itemOptions.hidden) return;
   lastSuggestionQuery = q;
 
   const activeNameKeys = getActiveUncheckedNameKeys();
@@ -580,14 +586,32 @@ function renderSuggestions() {
       if (aInList !== bInList) return aInList - bInList;
       return b.use_count - a.use_count;
     })
-    .slice(0, 20);
+    .slice(0, 5);
+
+  if (!matches.length) {
+    hideSuggestions();
+    return;
+  }
 
   el.itemOptions.innerHTML = matches
     .map((s) => {
-      const label = s.inList ? `${s.name} (already on list)` : s.name;
-      return `<option value="${escapeHtml(s.name)}" label="${escapeHtml(label)}"></option>`;
+      const secondary = s.inList ? `<span class="item-option-meta">Already on list</span>` : "";
+      return `<button class="item-option-btn${s.inList ? " in-list" : ""}" type="button" data-value="${escapeHtml(s.name)}"><span>${escapeHtml(s.name)}</span>${secondary}</button>`;
     })
     .join("");
+  el.itemOptions.hidden = false;
+  suggestionActiveIndex = -1;
+
+  for (const btn of el.itemOptions.querySelectorAll(".item-option-btn")) {
+    btn.addEventListener("mousedown", (ev) => ev.preventDefault());
+    btn.addEventListener("click", () => {
+      const value = btn.getAttribute("data-value") || "";
+      el.itemName.value = value;
+      applySectionGuess(value.toLowerCase());
+      applyAddFlagDefaults(value.toLowerCase());
+      hideSuggestions();
+    });
+  }
 }
 
 function scheduleSuggestionsRender() {
@@ -596,6 +620,52 @@ function scheduleSuggestionsRender() {
     renderSuggestions();
     suggestionTimer = null;
   }, 80);
+}
+
+function hideSuggestions() {
+  el.itemOptions.innerHTML = "";
+  el.itemOptions.hidden = true;
+  suggestionActiveIndex = -1;
+}
+
+function onSuggestionKeyDown(e) {
+  if (el.itemOptions.hidden) return;
+  const options = [...el.itemOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    suggestionActiveIndex = (suggestionActiveIndex + 1) % options.length;
+    applySuggestionHighlight(options, suggestionActiveIndex);
+    return;
+  }
+
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    suggestionActiveIndex = suggestionActiveIndex <= 0 ? options.length - 1 : suggestionActiveIndex - 1;
+    applySuggestionHighlight(options, suggestionActiveIndex);
+    return;
+  }
+
+  if (e.key === "Enter" && suggestionActiveIndex >= 0) {
+    e.preventDefault();
+    const btn = options[suggestionActiveIndex];
+    if (btn) btn.click();
+  }
+}
+
+function applySuggestionHighlight(options, index) {
+  options.forEach((btn, i) => {
+    const active = i === index;
+    btn.classList.toggle("is-active", active);
+    if (active) {
+      btn.scrollIntoView({ block: "nearest" });
+      const value = btn.getAttribute("data-value") || "";
+      el.itemName.value = value;
+      applySectionGuess(value.toLowerCase());
+      applyAddFlagDefaults(value.toLowerCase());
+    }
+  });
 }
 
 function renderSyncBar() {
@@ -631,7 +701,7 @@ function captureUndo(type, payload) {
   state.lastAction = { type, payload, ts: Date.now() };
   el.topUndoBtn.disabled = false;
   el.topUndoBtn.textContent = buildUndoButtonLabel(type, payload);
-  if (type === "check" || type === "item-meta") {
+  if (type === "check" || type === "item-meta" || type === "add") {
     showCheckToast(payload?.name, payload?.action_message);
   }
 }
@@ -711,6 +781,8 @@ function showCheckToast(itemName, actionMessage = "") {
   const label = itemName ? String(itemName).trim() : "item";
   if (actionMessage) {
     el.checkToastText.textContent = `${actionMessage} for ${label}. Tap to undo.`;
+  } else if (state.lastAction?.type === "add") {
+    el.checkToastText.textContent = `Added ${label}. Tap to undo.`;
   } else {
     el.checkToastText.textContent = `Update saved for ${label}. Tap to undo.`;
   }
