@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v70";
+const APP_VERSION = "v71";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -897,12 +897,19 @@ async function syncNow() {
 
 function detectConflicts(localItems, mergedItems) {
   const localById = new Map(localItems.map((i) => [i.id, i]));
+  const pendingIds = new Set(
+    state.pending
+      .map((op) => op?.payload?.id)
+      .filter(Boolean)
+  );
+
   for (const remote of mergedItems) {
     const local = localById.get(remote.id);
     if (!local) continue;
     const rts = new Date(remote.updated_at).getTime();
     const lts = new Date(local.updated_at).getTime();
     if (rts <= lts) continue;
+    if (!pendingIds.has(remote.id)) continue;
     if (!hasMaterialDifference(local, remote)) continue;
     queueConflict(describeRemoteResolution(local, remote));
   }
