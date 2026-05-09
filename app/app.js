@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v65";
+const APP_VERSION = "v70";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -41,7 +41,7 @@ const SECTION_KEYWORDS = {
 };
 
 const ADD_CARD_COLLAPSED_KEY = "shopping_list_add_card_collapsed";
-const SMALL_SHOP_FILTER_KEY = "shopping_list_small_shop_only";
+const HIDE_BIG_SHOP_FILTER_KEY = "shopping_list_hide_big_shop";
 
 const state = {
   items: [],
@@ -55,7 +55,7 @@ const state = {
   lastSyncError: "",
   lastSyncAt: null,
   lastAction: null,
-  smallShopOnly: false
+  hideBigShopItems: false
 };
 
 const el = {
@@ -69,7 +69,6 @@ const el = {
   addForm: document.getElementById("add-form"),
   addFabBtn: document.getElementById("add-fab-btn"),
   addBigShopBtn: document.getElementById("add-big-shop-btn"),
-  addSmallShopBtn: document.getElementById("add-small-shop-btn"),
   optionsFabBtn: document.getElementById("options-fab-btn"),
   optionsMenu: document.getElementById("options-menu"),
   itemName: document.getElementById("item-entry"),
@@ -117,8 +116,8 @@ async function init() {
   el.sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
   bindEvents();
   await loadLocal();
-  state.smallShopOnly = localStorage.getItem(SMALL_SHOP_FILTER_KEY) === "true";
-  renderSmallShopFilterButton();
+  state.hideBigShopItems = localStorage.getItem(HIDE_BIG_SHOP_FILTER_KEY) === "true";
+  renderBigShopFilterButton();
   setAddCardCollapsed(localStorage.getItem(ADD_CARD_COLLAPSED_KEY) === "true");
   await seedSuggestionsFromItems();
   render();
@@ -165,7 +164,6 @@ function bindEvents() {
 
   el.addForm.addEventListener("submit", onAddItemSubmit);
   el.addBigShopBtn.addEventListener("click", () => toggleAddFlag(el.addBigShopBtn));
-  el.addSmallShopBtn.addEventListener("click", () => toggleAddFlag(el.addSmallShopBtn));
   el.itemName.addEventListener("input", scheduleSuggestionsRender);
   el.itemName.addEventListener("focus", renderSuggestions);
 
@@ -177,11 +175,11 @@ function bindEvents() {
     document.body.classList.remove("options-menu-open");
   });
   el.smallShopFilterBtn.addEventListener("click", () => {
-    state.smallShopOnly = !state.smallShopOnly;
-    localStorage.setItem(SMALL_SHOP_FILTER_KEY, String(state.smallShopOnly));
-    renderSmallShopFilterButton();
+    state.hideBigShopItems = !state.hideBigShopItems;
+    localStorage.setItem(HIDE_BIG_SHOP_FILTER_KEY, String(state.hideBigShopItems));
+    renderBigShopFilterButton();
     render();
-    showInfoToast(state.smallShopOnly ? "Showing small shop only" : "Showing full list");
+    showInfoToast(state.hideBigShopItems ? "Hiding big shop items" : "Showing full list");
     el.optionsMenu.hidden = true;
     document.body.classList.remove("options-menu-open");
   });
@@ -257,9 +255,6 @@ async function onAddItemSubmit(e) {
     section: el.sectionSelect.value,
     quantity_text: el.itemQty.value.trim(),
     checked: false,
-    small_shop: el.addBigShopBtn.classList.contains("is-active")
-      ? false
-      : el.addSmallShopBtn.classList.contains("is-active"),
     deleted_at: null,
     updated_at: new Date().toISOString()
   };
@@ -275,7 +270,6 @@ async function onAddItemSubmit(e) {
 
   el.addForm.reset();
   setAddFlagState(el.addBigShopBtn, false);
-  setAddFlagState(el.addSmallShopBtn, false);
   renderSuggestions();
   setAddCardCollapsed(true);
   syncNow();
@@ -285,7 +279,7 @@ function render() {
   const grouped = new Map(SECTIONS.map((s) => [s, []]));
   for (const item of state.items) {
     if (item.checked || item.deleted_at) continue;
-    if (state.smallShopOnly && !item.small_shop) continue;
+    if (state.hideBigShopItems && isBigShopItem(item)) continue;
     grouped.get(getEffectiveSection(item))?.push(item);
   }
 
@@ -321,7 +315,6 @@ function itemRow(item) {
       <div class="item-menu" hidden>
         <button class="item-menu-fav-btn db-icon-btn db-fav-btn item-menu-action-btn" type="button"></button>
         <button class="item-menu-big-btn db-icon-btn db-big-shop-btn item-menu-action-btn" type="button"></button>
-        <button class="item-menu-small-btn db-icon-btn db-small-shop-btn item-menu-action-btn" type="button"></button>
       </div>
     </div>
   `;
@@ -345,7 +338,6 @@ function itemRow(item) {
   const menu = row.querySelector(".item-menu");
   const favBtn = row.querySelector(".item-menu-fav-btn");
   const bigBtn = row.querySelector(".item-menu-big-btn");
-  const smallBtn = row.querySelector(".item-menu-small-btn");
 
   const refreshMenuLabels = () => {
     const favActive = isFavouriteItem(item);
@@ -357,11 +349,6 @@ function itemRow(item) {
     bigBtn.title = bigActive ? "Remove big shop" : "Mark big shop";
     bigBtn.setAttribute("aria-label", bigBtn.title);
     bigBtn.classList.toggle("is-active", bigActive);
-    const smallActive = Boolean(item.small_shop);
-    smallBtn.innerHTML = `<span class="action-icon">🎒</span><span class="action-label">${smallActive ? "Remove small shop" : "Mark small shop"}</span>`;
-    smallBtn.title = smallActive ? "Remove small shop" : "Mark small shop";
-    smallBtn.setAttribute("aria-label", smallBtn.title);
-    smallBtn.classList.toggle("is-active", smallActive);
   };
   refreshMenuLabels();
 
@@ -386,6 +373,7 @@ function itemRow(item) {
     });
     await setFavourite(item.name, !prevFavourite, getEffectiveSection(item));
     refreshMenuLabels();
+    render();
     menu.hidden = true;
   });
 
@@ -402,27 +390,8 @@ function itemRow(item) {
       action_message: actionMessage
     });
     await setBigShop(item.name, !prevBigShop, getEffectiveSection(item));
-    if (!prevBigShop && item.small_shop) {
-      item.small_shop = false;
-      item.updated_at = new Date().toISOString();
-      await enqueue("upsert", item);
-    }
     refreshMenuLabels();
     render();
-    menu.hidden = true;
-  });
-
-  smallBtn.addEventListener("click", async (ev) => {
-    ev.stopPropagation();
-    const prev = { ...item };
-    const actionMessage = Boolean(item.small_shop) ? "Removed small shop" : "Marked small shop";
-    item.small_shop = !Boolean(item.small_shop);
-    item.updated_at = new Date().toISOString();
-    captureUndo("small-shop", { ...prev, action_message: actionMessage });
-    await enqueue("upsert", item);
-    refreshMenuLabels();
-    render();
-    syncNow();
     menu.hidden = true;
   });
 
@@ -662,7 +631,7 @@ function captureUndo(type, payload) {
   state.lastAction = { type, payload, ts: Date.now() };
   el.topUndoBtn.disabled = false;
   el.topUndoBtn.textContent = buildUndoButtonLabel(type, payload);
-  if (type === "check" || type === "item-meta" || type === "small-shop") {
+  if (type === "check" || type === "item-meta") {
     showCheckToast(payload?.name, payload?.action_message);
   }
 }
@@ -798,7 +767,6 @@ function actionLabel(type) {
   if (type === "uncheck") return "uncheck item";
   if (type === "delete") return "remove item";
   if (type === "item-meta") return "item options";
-  if (type === "small-shop") return "small shop";
   return "action";
 }
 
@@ -809,9 +777,9 @@ function buildUndoButtonLabel(type, payload) {
   return `Undo ${action}`;
 }
 
-function renderSmallShopFilterButton() {
+function renderBigShopFilterButton() {
   if (!el.smallShopFilterBtn) return;
-  el.smallShopFilterBtn.textContent = state.smallShopOnly ? "Show Full List" : "Show Small Shop Only";
+  el.smallShopFilterBtn.textContent = state.hideBigShopItems ? "Show Full List" : "Hide Big Shop Items";
 }
 
 function getEffectiveSection(item) {
@@ -945,7 +913,6 @@ function hasMaterialDifference(a, b) {
     a.name !== b.name ||
     a.section !== b.section ||
     a.quantity_text !== b.quantity_text ||
-    Boolean(a.small_shop) !== Boolean(b.small_shop) ||
     Boolean(a.checked) !== Boolean(b.checked) ||
     Boolean(a.deleted_at) !== Boolean(b.deleted_at)
   );
@@ -965,8 +932,8 @@ function describeRemoteResolution(local, remote) {
     key: `conflict:${remote.id}:${remote.updated_at || ""}`,
     summary,
     details: [
-      `Local -> name: ${local.name || "none"}, section: ${local.section || "none"}, qty: ${local.quantity_text || "none"}, checked: ${Boolean(local.checked)}, deleted: ${Boolean(local.deleted_at)}, small_shop: ${Boolean(local.small_shop)}, updated_at: ${local.updated_at || "none"}`,
-      `Remote -> name: ${remote.name || "none"}, section: ${remote.section || "none"}, qty: ${remote.quantity_text || "none"}, checked: ${Boolean(remote.checked)}, deleted: ${Boolean(remote.deleted_at)}, small_shop: ${Boolean(remote.small_shop)}, updated_at: ${remote.updated_at || "none"}`
+      `Local -> name: ${local.name || "none"}, section: ${local.section || "none"}, qty: ${local.quantity_text || "none"}, checked: ${Boolean(local.checked)}, deleted: ${Boolean(local.deleted_at)}, updated_at: ${local.updated_at || "none"}`,
+      `Remote -> name: ${remote.name || "none"}, section: ${remote.section || "none"}, qty: ${remote.quantity_text || "none"}, checked: ${Boolean(remote.checked)}, deleted: ${Boolean(remote.deleted_at)}, updated_at: ${remote.updated_at || "none"}`
     ]
   };
 }
@@ -1313,7 +1280,6 @@ function getItemStatusPrefix(item) {
   let prefix = "";
   if (isFavouriteItem(item)) prefix += "★ ";
   if (isBigShopItem(item)) prefix += "🛒 ";
-  if (Boolean(item?.small_shop)) prefix += "🎒 ";
   return prefix;
 }
 

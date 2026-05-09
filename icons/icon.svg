@@ -1,4 +1,12 @@
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>
-  <rect width='512' height='512' rx='96' fill='#0f766e'/>
-  <text x='50%' y='56%' dominant-baseline='middle' text-anchor='middle' font-family='Avenir Next, Segoe UI, sans-serif' font-size='180' font-weight='700' fill='white'>MSL</text>
+  <defs>
+    <linearGradient id='bg' x1='0' y1='0' x2='0' y2='1'>
+      <stop offset='0%' stop-color='#0f4f77'/>
+      <stop offset='100%' stop-color='#1e7fb4'/>
+    </linearGradient>
+  </defs>
+  <rect width='512' height='512' rx='96' fill='url(#bg)'/>
+  <circle cx='256' cy='256' r='188' fill='#ffffff20'/>
+  <text x='50%' y='47%' dominant-baseline='middle' text-anchor='middle' font-size='188'>🐳</text>
+  <text x='50%' y='71%' dominant-baseline='middle' text-anchor='middle' font-size='118'>🛒</text>
 </svg>

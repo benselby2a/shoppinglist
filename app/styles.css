@@ -155,7 +155,7 @@ body.options-menu-open::before {
 }
 .add-flags-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 .add-flag-btn {
@@ -323,25 +323,12 @@ body.options-menu-open::before {
   border-color: #b7d9f2;
   opacity: 0.65;
 }
-.db-small-shop-btn {
-  color: #1f6f5f;
-  background: #e8f8f3;
-  border-color: #b7e6d8;
-  opacity: 0.65;
-}
 .db-big-shop-btn.is-active {
   background: #d9efff;
   color: #0f4f77;
   border-color: #84bbde;
   opacity: 1;
   box-shadow: 0 0 0 2px rgb(132 187 222 / 0.35);
-}
-.db-small-shop-btn.is-active {
-  background: #d9f3ea;
-  color: #1f6f5f;
-  border-color: #80cbb2;
-  opacity: 1;
-  box-shadow: 0 0 0 2px rgb(128 203 178 / 0.35);
 }
 .db-delete-btn {
   color: #b5423c;
@@ -464,7 +451,9 @@ body.options-menu-open::before {
   background: #f8fbff;
   font-size: 0.9rem;
 }
-main { padding-bottom: 0; }
+main {
+  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+}
 .check-toast {
   position: fixed;
   top: 12px;
