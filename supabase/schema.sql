@@ -7,10 +7,14 @@ create table if not exists public.shopping_items (
   section text not null,
   quantity_text text,
   checked boolean not null default false,
+  small_shop boolean not null default false,
   deleted_at timestamptz,
   updated_at timestamptz not null default now(),
   updated_by text
 );
+
+alter table public.shopping_items
+  add column if not exists small_shop boolean not null default false;
 
 create index if not exists shopping_items_household_idx on public.shopping_items(household_id);
 create index if not exists shopping_items_updated_idx on public.shopping_items(updated_at desc);

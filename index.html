@@ -17,13 +17,8 @@
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <h1>MSL</h1>
+          <h1>MSL <span id="app-version" class="app-version"></span></h1>
           <p id="household-label">🐳 Manatee Shopping List</p>
-        </div>
-        <div class="topbar-actions">
-          <button id="top-undo-btn" class="icon-btn" type="button" aria-label="Undo last action" disabled>Undo</button>
-          <button id="add-favourites-btn" class="icon-btn" type="button">Add favourite items</button>
-          <button id="show-checked-btn" class="icon-btn" type="button">Show item database</button>
         </div>
       </header>
 
@@ -43,6 +38,7 @@
               id="item-entry"
               class="add-item-input"
               name="inventory-entry"
+              list="item-options"
               placeholder="Type Item Here"
               required
               autocomplete="new-password"
@@ -54,11 +50,24 @@
             <datalist id="item-options"></datalist>
             <select id="item-section"></select>
             <input id="item-qty" name="shopping-qty" placeholder="Qty" autocomplete="off" />
+            <div class="add-flags-row">
+              <button id="add-big-shop-btn" class="add-flag-btn" type="button" aria-pressed="false">🛒 Big Shop</button>
+              <button id="add-small-shop-btn" class="add-flag-btn" type="button" aria-pressed="false">🎒 Small Shop</button>
+            </div>
             <button id="add-item-btn" class="add-submit-btn" type="submit" tabindex="0">Add Item</button>
           </div>
         </form>
       </section>
       <button id="add-fab-btn" class="add-fab-btn" type="button" aria-label="Add new item" hidden>＋</button>
+      <div class="options-fab-wrap">
+        <button id="options-fab-btn" class="options-fab-btn" type="button" aria-label="Show options">☰</button>
+        <div id="options-menu" class="options-menu" hidden>
+          <button id="top-undo-btn" class="icon-btn" type="button" aria-label="Undo last action" disabled>Undo</button>
+          <button id="small-shop-filter-btn" class="icon-btn" type="button">Show Small Shop Only</button>
+          <button id="add-favourites-btn" class="icon-btn" type="button">Add Favourite Items</button>
+          <button id="show-checked-btn" class="icon-btn" type="button">Show Item Database</button>
+        </div>
+      </div>
 
       <footer class="footer-actions">
       </footer>

@@ -4,6 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
+const APP_VERSION = "v65";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -40,6 +41,7 @@ const SECTION_KEYWORDS = {
 };
 
 const ADD_CARD_COLLAPSED_KEY = "shopping_list_add_card_collapsed";
+const SMALL_SHOP_FILTER_KEY = "shopping_list_small_shop_only";
 
 const state = {
   items: [],
@@ -52,7 +54,8 @@ const state = {
   supabaseReachable: false,
   lastSyncError: "",
   lastSyncAt: null,
-  lastAction: null
+  lastAction: null,
+  smallShopOnly: false
 };
 
 const el = {
@@ -65,11 +68,16 @@ const el = {
   addCard: document.querySelector(".add-card"),
   addForm: document.getElementById("add-form"),
   addFabBtn: document.getElementById("add-fab-btn"),
+  addBigShopBtn: document.getElementById("add-big-shop-btn"),
+  addSmallShopBtn: document.getElementById("add-small-shop-btn"),
+  optionsFabBtn: document.getElementById("options-fab-btn"),
+  optionsMenu: document.getElementById("options-menu"),
   itemName: document.getElementById("item-entry"),
   itemQty: document.getElementById("item-qty"),
   itemOptions: document.getElementById("item-options"),
 
   topUndoBtn: document.getElementById("top-undo-btn"),
+  smallShopFilterBtn: document.getElementById("small-shop-filter-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
 
   checkedModal: document.getElementById("checked-modal"),
@@ -88,6 +96,7 @@ const el = {
 
   releaseBanner: document.getElementById("release-banner"),
   releaseRefreshBtn: document.getElementById("release-refresh-btn"),
+  appVersion: document.getElementById("app-version"),
 
   appShell: document.querySelector(".app-shell")
 };
@@ -104,9 +113,12 @@ init();
 
 async function init() {
   guardPasscode();
+  if (el.appVersion) el.appVersion.textContent = APP_VERSION;
   el.sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
   bindEvents();
   await loadLocal();
+  state.smallShopOnly = localStorage.getItem(SMALL_SHOP_FILTER_KEY) === "true";
+  renderSmallShopFilterButton();
   setAddCardCollapsed(localStorage.getItem(ADD_CARD_COLLAPSED_KEY) === "true");
   await seedSuggestionsFromItems();
   render();
@@ -139,17 +151,47 @@ function bindEvents() {
   el.addFabBtn.addEventListener("click", () => {
     setAddCardCollapsed(!el.addCard.classList.contains("is-collapsed"));
   });
+  el.optionsFabBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const opening = el.optionsMenu.hidden;
+    el.optionsMenu.hidden = !opening;
+    document.body.classList.toggle("options-menu-open", opening);
+  });
+  el.optionsMenu.addEventListener("click", (ev) => ev.stopPropagation());
+  document.addEventListener("click", () => {
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  });
 
   el.addForm.addEventListener("submit", onAddItemSubmit);
+  el.addBigShopBtn.addEventListener("click", () => toggleAddFlag(el.addBigShopBtn));
+  el.addSmallShopBtn.addEventListener("click", () => toggleAddFlag(el.addSmallShopBtn));
   el.itemName.addEventListener("input", scheduleSuggestionsRender);
   el.itemName.addEventListener("focus", renderSuggestions);
 
   el.topUndoBtn.addEventListener("click", async () => {
     if (!state.lastAction) return;
     await undoLastAction();
+    showInfoToast("Undid last action");
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  });
+  el.smallShopFilterBtn.addEventListener("click", () => {
+    state.smallShopOnly = !state.smallShopOnly;
+    localStorage.setItem(SMALL_SHOP_FILTER_KEY, String(state.smallShopOnly));
+    renderSmallShopFilterButton();
+    render();
+    showInfoToast(state.smallShopOnly ? "Showing small shop only" : "Showing full list");
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
   });
 
-  el.addFavouritesBtn.addEventListener("click", addFavouritesToList);
+  el.addFavouritesBtn.addEventListener("click", () => {
+    addFavouritesToList();
+    showInfoToast("Added favourite items");
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  });
 
   el.showCheckedBtn.addEventListener("click", () => {
     const open = el.checkedModal.classList.contains("is-open");
@@ -159,8 +201,10 @@ function bindEvents() {
     }
     el.checkedModal.classList.add("is-open");
     el.appShell.classList.add("modal-focus");
-    el.showCheckedBtn.textContent = "Hide item database";
+    el.showCheckedBtn.textContent = "Hide Item Database";
     renderCheckedModal();
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
   });
 
   el.closeCheckedBtn.addEventListener("click", closeCheckedModal);
@@ -213,6 +257,9 @@ async function onAddItemSubmit(e) {
     section: el.sectionSelect.value,
     quantity_text: el.itemQty.value.trim(),
     checked: false,
+    small_shop: el.addBigShopBtn.classList.contains("is-active")
+      ? false
+      : el.addSmallShopBtn.classList.contains("is-active"),
     deleted_at: null,
     updated_at: new Date().toISOString()
   };
@@ -222,8 +269,13 @@ async function onAddItemSubmit(e) {
   render();
   enqueue("upsert", item).catch(() => {});
   upsertSuggestion(name, item.section).catch(() => {});
+  if (el.addBigShopBtn.classList.contains("is-active")) {
+    setBigShop(name, true, item.section).catch(() => {});
+  }
 
   el.addForm.reset();
+  setAddFlagState(el.addBigShopBtn, false);
+  setAddFlagState(el.addSmallShopBtn, false);
   renderSuggestions();
   setAddCardCollapsed(true);
   syncNow();
@@ -233,6 +285,7 @@ function render() {
   const grouped = new Map(SECTIONS.map((s) => [s, []]));
   for (const item of state.items) {
     if (item.checked || item.deleted_at) continue;
+    if (state.smallShopOnly && !item.small_shop) continue;
     grouped.get(getEffectiveSection(item))?.push(item);
   }
 
@@ -257,13 +310,24 @@ function itemRow(item) {
   row.innerHTML = `
     <button class="item-main-btn" type="button" aria-label="Check ${escapeHtml(item.name)}">
       <span class="item-check-icon">✓</span>
-      <span class="item-name"></span>
+      <span class="item-name">
+        <span class="item-status-icons"></span>
+        <span class="item-name-text"></span>
+      </span>
       <span class="item-qty"></span>
     </button>
-    <button class="delete-btn" type="button" aria-label="Remove ${escapeHtml(item.name)}">✕</button>
+    <div class="item-menu-wrap">
+      <button class="item-menu-btn" type="button" aria-label="Item actions">...</button>
+      <div class="item-menu" hidden>
+        <button class="item-menu-fav-btn db-icon-btn db-fav-btn item-menu-action-btn" type="button"></button>
+        <button class="item-menu-big-btn db-icon-btn db-big-shop-btn item-menu-action-btn" type="button"></button>
+        <button class="item-menu-small-btn db-icon-btn db-small-shop-btn item-menu-action-btn" type="button"></button>
+      </div>
+    </div>
   `;
 
-  row.querySelector(".item-name").textContent = isBigShopItem(item) ? `🛒 ${item.name}` : item.name;
+  row.querySelector(".item-status-icons").textContent = getItemStatusPrefix(item);
+  row.querySelector(".item-name-text").textContent = item.name;
   row.querySelector(".item-qty").textContent = item.quantity_text || "";
 
   row.querySelector(".item-main-btn").addEventListener("click", () => {
@@ -276,15 +340,94 @@ function itemRow(item) {
     syncNow();
   });
 
-  row.querySelector(".delete-btn").addEventListener("click", () => {
-    const prev = { ...item };
-    item.deleted_at = new Date().toISOString();
-    item.updated_at = new Date().toISOString();
-    captureUndo("delete", prev);
-    render();
-    enqueue("upsert", item).catch(() => {});
-    syncNow();
+  const menuWrap = row.querySelector(".item-menu-wrap");
+  const menuBtn = row.querySelector(".item-menu-btn");
+  const menu = row.querySelector(".item-menu");
+  const favBtn = row.querySelector(".item-menu-fav-btn");
+  const bigBtn = row.querySelector(".item-menu-big-btn");
+  const smallBtn = row.querySelector(".item-menu-small-btn");
+
+  const refreshMenuLabels = () => {
+    const favActive = isFavouriteItem(item);
+    const bigActive = isBigShopItem(item);
+    favBtn.innerHTML = `<span class="action-icon">${favActive ? "★" : "☆"}</span><span class="action-label">${favActive ? "Remove favourite" : "Mark favourite"}</span>`;
+    favBtn.title = favActive ? "Remove favourite" : "Mark favourite";
+    favBtn.setAttribute("aria-label", favBtn.title);
+    bigBtn.innerHTML = `<span class="action-icon">🛒</span><span class="action-label">${bigActive ? "Remove big shop" : "Mark big shop"}</span>`;
+    bigBtn.title = bigActive ? "Remove big shop" : "Mark big shop";
+    bigBtn.setAttribute("aria-label", bigBtn.title);
+    bigBtn.classList.toggle("is-active", bigActive);
+    const smallActive = Boolean(item.small_shop);
+    smallBtn.innerHTML = `<span class="action-icon">🎒</span><span class="action-label">${smallActive ? "Remove small shop" : "Mark small shop"}</span>`;
+    smallBtn.title = smallActive ? "Remove small shop" : "Mark small shop";
+    smallBtn.setAttribute("aria-label", smallBtn.title);
+    smallBtn.classList.toggle("is-active", smallActive);
+  };
+  refreshMenuLabels();
+
+  menuBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const isOpen = !menu.hidden;
+    document.querySelectorAll(".item-menu").forEach((m) => { m.hidden = true; });
+    menu.hidden = isOpen;
   });
+
+  favBtn.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    const prevFavourite = isFavouriteItem(item);
+    const prevBigShop = isBigShopItem(item);
+    const actionMessage = prevFavourite ? "Removed favourite" : "Marked favourite";
+    captureUndo("item-meta", {
+      name: item.name,
+      section: getEffectiveSection(item),
+      favourite: prevFavourite,
+      big_shop: prevBigShop,
+      action_message: actionMessage
+    });
+    await setFavourite(item.name, !prevFavourite, getEffectiveSection(item));
+    refreshMenuLabels();
+    menu.hidden = true;
+  });
+
+  bigBtn.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    const prevFavourite = isFavouriteItem(item);
+    const prevBigShop = isBigShopItem(item);
+    const actionMessage = prevBigShop ? "Removed big shop" : "Marked big shop";
+    captureUndo("item-meta", {
+      name: item.name,
+      section: getEffectiveSection(item),
+      favourite: prevFavourite,
+      big_shop: prevBigShop,
+      action_message: actionMessage
+    });
+    await setBigShop(item.name, !prevBigShop, getEffectiveSection(item));
+    if (!prevBigShop && item.small_shop) {
+      item.small_shop = false;
+      item.updated_at = new Date().toISOString();
+      await enqueue("upsert", item);
+    }
+    refreshMenuLabels();
+    render();
+    menu.hidden = true;
+  });
+
+  smallBtn.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    const prev = { ...item };
+    const actionMessage = Boolean(item.small_shop) ? "Removed small shop" : "Marked small shop";
+    item.small_shop = !Boolean(item.small_shop);
+    item.updated_at = new Date().toISOString();
+    captureUndo("small-shop", { ...prev, action_message: actionMessage });
+    await enqueue("upsert", item);
+    refreshMenuLabels();
+    render();
+    syncNow();
+    menu.hidden = true;
+  });
+
+  menuWrap.addEventListener("click", (ev) => ev.stopPropagation());
+  document.addEventListener("click", () => { menu.hidden = true; });
 
   return row;
 }
@@ -389,26 +532,6 @@ function renderCheckedModal() {
     });
     actions.appendChild(bigShopBtn);
 
-    if (entry.checkedItem) {
-      const uncheckBtn = document.createElement("button");
-      uncheckBtn.type = "button";
-      uncheckBtn.className = "db-icon-btn db-uncheck-btn";
-      uncheckBtn.textContent = "↺";
-      uncheckBtn.title = "Uncheck item";
-      uncheckBtn.setAttribute("aria-label", "Uncheck item");
-      uncheckBtn.addEventListener("click", async () => {
-        const prev = { ...entry.checkedItem };
-        entry.checkedItem.checked = false;
-        entry.checkedItem.updated_at = new Date().toISOString();
-        captureUndo("uncheck", prev);
-        await enqueue("upsert", entry.checkedItem);
-        renderCheckedModal();
-        render();
-        syncNow();
-      });
-      actions.appendChild(uncheckBtn);
-    }
-
     const delBtn = document.createElement("button");
     delBtn.type = "button";
     delBtn.className = "db-icon-btn db-delete-btn";
@@ -432,14 +555,70 @@ function renderCheckedModal() {
 function closeCheckedModal() {
   el.checkedModal.classList.remove("is-open");
   el.appShell.classList.remove("modal-focus");
-  el.showCheckedBtn.textContent = "Show item database";
+  el.showCheckedBtn.textContent = "Show Item Database";
 }
 
 function renderSuggestions() {
   const q = el.itemName.value.trim().toLowerCase();
   applySectionGuess(q);
+  applyAddFlagDefaults(q);
+
+  if (q.length < 3) {
+    lastSuggestionQuery = q;
+    el.itemOptions.innerHTML = "";
+    return;
+  }
+
+  if (q === lastSuggestionQuery && el.itemOptions.children.length > 0) return;
   lastSuggestionQuery = q;
-  el.itemOptions.innerHTML = "";
+
+  const activeNameKeys = getActiveUncheckedNameKeys();
+  const byKey = new Map();
+
+  for (const s of state.suggestionIndex) {
+    const key = canonicalNameKey(s.name);
+    if (!key || byKey.has(key)) continue;
+    byKey.set(key, {
+      name: s.name,
+      nameLower: s.nameLower,
+      use_count: s.use_count || 0,
+      inList: activeNameKeys.has(key)
+    });
+  }
+
+  for (const item of state.items) {
+    if (item.deleted_at || item.checked) continue;
+    const normalizedName = normalizeItemName(item.name);
+    const key = canonicalNameKey(normalizedName);
+    if (!key) continue;
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      name: normalizedName,
+      nameLower: normalizedName.toLowerCase(),
+      use_count: 0,
+      inList: true
+    });
+  }
+
+  const matches = [...byKey.values()]
+    .filter((s) => s.nameLower.includes(q) && s.nameLower !== q)
+    .sort((a, b) => {
+      const aStarts = a.nameLower.startsWith(q) ? 0 : 1;
+      const bStarts = b.nameLower.startsWith(q) ? 0 : 1;
+      if (aStarts !== bStarts) return aStarts - bStarts;
+      const aInList = a.inList ? 1 : 0;
+      const bInList = b.inList ? 1 : 0;
+      if (aInList !== bInList) return aInList - bInList;
+      return b.use_count - a.use_count;
+    })
+    .slice(0, 20);
+
+  el.itemOptions.innerHTML = matches
+    .map((s) => {
+      const label = s.inList ? `${s.name} (already on list)` : s.name;
+      return `<option value="${escapeHtml(s.name)}" label="${escapeHtml(label)}"></option>`;
+    })
+    .join("");
 }
 
 function scheduleSuggestionsRender() {
@@ -472,6 +651,7 @@ function renderSyncBar() {
 function setAddCardCollapsed(collapsed) {
   el.addCard.classList.toggle("is-collapsed", collapsed);
   document.body.classList.toggle("add-panel-collapsed", collapsed);
+  document.body.classList.toggle("add-panel-open", !collapsed);
   el.addFabBtn.textContent = collapsed ? "＋" : "－";
   el.addFabBtn.setAttribute("aria-label", collapsed ? "Show add new item panel" : "Hide add new item panel");
   el.addFabBtn.hidden = false;
@@ -481,8 +661,10 @@ function setAddCardCollapsed(collapsed) {
 function captureUndo(type, payload) {
   state.lastAction = { type, payload, ts: Date.now() };
   el.topUndoBtn.disabled = false;
-  el.topUndoBtn.textContent = `Undo ${actionLabel(type)}`;
-  if (type === "check") showCheckToast(payload?.name);
+  el.topUndoBtn.textContent = buildUndoButtonLabel(type, payload);
+  if (type === "check" || type === "item-meta" || type === "small-shop") {
+    showCheckToast(payload?.name, payload?.action_message);
+  }
 }
 
 async function undoLastAction() {
@@ -495,6 +677,11 @@ async function undoLastAction() {
       item.deleted_at = new Date().toISOString();
       await enqueue("upsert", item);
     }
+  } else if (type === "item-meta") {
+    const name = payload?.name || "";
+    const section = payload?.section || "";
+    await setFavourite(name, Boolean(payload?.favourite), section);
+    await setBigShop(name, Boolean(payload?.big_shop), section);
   } else {
     const idx = state.items.findIndex((i) => i.id === payload.id);
     if (idx >= 0) {
@@ -512,14 +699,33 @@ async function undoLastAction() {
 }
 
 function queueConflict(message) {
-  if (!state.conflictQueue.includes(message)) state.conflictQueue.push(message);
+  const key = message?.key || message?.summary || String(message);
+  if (!state.conflictQueue.some((c) => (c?.key || c?.summary || String(c)) === key)) {
+    state.conflictQueue.push(message);
+  }
   showConflictSummary();
 }
 
 function showConflictSummary() {
   if (!state.conflictQueue.length) return;
-  const summary = state.conflictQueue.map((m, i) => `${i + 1}. ${m}`).join("\n");
-  el.conflictMessage.textContent = summary;
+  const rows = state.conflictQueue.map((entry, i) => {
+    if (typeof entry === "string") {
+      return `<div><strong>${i + 1}. ${escapeHtml(entry)}</strong></div>`;
+    }
+    const detailsHtml = (entry.details || [])
+      .map((line) => `<div>${escapeHtml(line)}</div>`)
+      .join("");
+    return `
+      <div class="conflict-entry">
+        <strong>${i + 1}. ${escapeHtml(entry.summary || "Conflict detected")}</strong>
+        <details>
+          <summary>Show details</summary>
+          <div class="conflict-details">${detailsHtml}</div>
+        </details>
+      </div>
+    `;
+  }).join("");
+  el.conflictMessage.innerHTML = rows;
   el.conflictModal.classList.add("is-open");
 }
 
@@ -528,13 +734,17 @@ function acknowledgeConflict() {
   el.conflictModal.classList.remove("is-open");
 }
 
-function showCheckToast(itemName) {
+function showCheckToast(itemName, actionMessage = "") {
   if (checkToastTimer) clearTimeout(checkToastTimer);
   checkToastMode = "undo";
   el.checkToast.classList.remove("is-error");
   el.checkToast.style.cursor = "pointer";
   const label = itemName ? String(itemName).trim() : "item";
-  el.checkToastText.textContent = `Tap to undo ${label}`;
+  if (actionMessage) {
+    el.checkToastText.textContent = `${actionMessage} for ${label}. Tap to undo.`;
+  } else {
+    el.checkToastText.textContent = `Update saved for ${label}. Tap to undo.`;
+  }
   el.checkToast.hidden = false;
   checkToastTimer = setTimeout(hideCheckToast, 3000);
 }
@@ -547,6 +757,16 @@ function showDuplicateToast(itemName) {
   el.checkToastText.textContent = `${itemName} is already on your list`;
   el.checkToast.hidden = false;
   checkToastTimer = setTimeout(hideCheckToast, 2600);
+}
+
+function showInfoToast(message) {
+  if (checkToastTimer) clearTimeout(checkToastTimer);
+  checkToastMode = "info";
+  el.checkToast.classList.remove("is-error");
+  el.checkToast.style.cursor = "default";
+  el.checkToastText.textContent = message;
+  el.checkToast.hidden = false;
+  checkToastTimer = setTimeout(hideCheckToast, 2200);
 }
 
 function hideCheckToast() {
@@ -577,7 +797,21 @@ function actionLabel(type) {
   if (type === "check") return "check item";
   if (type === "uncheck") return "uncheck item";
   if (type === "delete") return "remove item";
+  if (type === "item-meta") return "item options";
+  if (type === "small-shop") return "small shop";
   return "action";
+}
+
+function buildUndoButtonLabel(type, payload) {
+  const action = actionLabel(type);
+  const name = (payload?.name || "").trim();
+  if (name) return `Undo ${action} (${name})`;
+  return `Undo ${action}`;
+}
+
+function renderSmallShopFilterButton() {
+  if (!el.smallShopFilterBtn) return;
+  el.smallShopFilterBtn.textContent = state.smallShopOnly ? "Show Full List" : "Show Small Shop Only";
 }
 
 function getEffectiveSection(item) {
@@ -591,6 +825,20 @@ function applySectionGuess(queryLower) {
   if (!queryLower) return;
   const guessed = guessSection(queryLower);
   if (guessed) el.sectionSelect.value = guessed;
+}
+
+function applyAddFlagDefaults(queryLower) {
+  const q = (queryLower || "").trim();
+  if (!q) {
+    setAddFlagState(el.addBigShopBtn, false);
+    return;
+  }
+
+  const match = state.suggestions.find((s) => {
+    const name = (s.name || "").trim().toLowerCase();
+    return name === q;
+  });
+  setAddFlagState(el.addBigShopBtn, Boolean(match?.big_shop));
 }
 
 function guessSection(queryLower) {
@@ -697,6 +945,7 @@ function hasMaterialDifference(a, b) {
     a.name !== b.name ||
     a.section !== b.section ||
     a.quantity_text !== b.quantity_text ||
+    Boolean(a.small_shop) !== Boolean(b.small_shop) ||
     Boolean(a.checked) !== Boolean(b.checked) ||
     Boolean(a.deleted_at) !== Boolean(b.deleted_at)
   );
@@ -704,13 +953,22 @@ function hasMaterialDifference(a, b) {
 
 function describeRemoteResolution(local, remote) {
   const label = remote.name || local.name || "item";
-  if (!local.deleted_at && remote.deleted_at) return `${label}: removed`;
-  if (!local.checked && remote.checked) return `${label}: marked checked`;
-  if (local.checked && !remote.checked) return `${label}: restored to active list`;
-  if (local.section !== remote.section) return `${label}: section updated to ${remote.section}`;
-  if (local.quantity_text !== remote.quantity_text) return `${label}: quantity updated to ${remote.quantity_text || "none"}`;
-  if (local.name !== remote.name) return `${local.name || "Item"}: renamed to ${remote.name}`;
-  return `${label}: updated to latest version`;
+  let summary = `${label}: updated to latest version`;
+  if (!local.deleted_at && remote.deleted_at) summary = `${label}: removed`;
+  else if (!local.checked && remote.checked) summary = `${label}: marked checked`;
+  else if (local.checked && !remote.checked) summary = `${label}: restored to active list`;
+  else if (local.section !== remote.section) summary = `${label}: section updated to ${remote.section}`;
+  else if (local.quantity_text !== remote.quantity_text) summary = `${label}: quantity updated to ${remote.quantity_text || "none"}`;
+  else if (local.name !== remote.name) summary = `${local.name || "Item"}: renamed to ${remote.name}`;
+
+  return {
+    key: `conflict:${remote.id}:${remote.updated_at || ""}`,
+    summary,
+    details: [
+      `Local -> name: ${local.name || "none"}, section: ${local.section || "none"}, qty: ${local.quantity_text || "none"}, checked: ${Boolean(local.checked)}, deleted: ${Boolean(local.deleted_at)}, small_shop: ${Boolean(local.small_shop)}, updated_at: ${local.updated_at || "none"}`,
+      `Remote -> name: ${remote.name || "none"}, section: ${remote.section || "none"}, qty: ${remote.quantity_text || "none"}, checked: ${Boolean(remote.checked)}, deleted: ${Boolean(remote.deleted_at)}, small_shop: ${Boolean(remote.small_shop)}, updated_at: ${remote.updated_at || "none"}`
+    ]
+  };
 }
 
 async function enqueue(type, payload) {
@@ -1028,10 +1286,35 @@ function isActiveDuplicateName(name) {
   return getActiveUncheckedNameKeys().has(key);
 }
 
+function toggleAddFlag(button) {
+  const next = !button.classList.contains("is-active");
+  setAddFlagState(button, next);
+}
+
+function setAddFlagState(button, active) {
+  if (!button) return;
+  button.classList.toggle("is-active", active);
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+}
+
 function isBigShopItem(item) {
   const key = canonicalNameKey(item?.name);
   if (!key) return false;
   return state.suggestions.some((s) => canonicalNameKey(s.name) === key && Boolean(s.big_shop));
+}
+
+function isFavouriteItem(item) {
+  const key = canonicalNameKey(item?.name);
+  if (!key) return false;
+  return state.suggestions.some((s) => canonicalNameKey(s.name) === key && Boolean(s.favourite));
+}
+
+function getItemStatusPrefix(item) {
+  let prefix = "";
+  if (isFavouriteItem(item)) prefix += "★ ";
+  if (isBigShopItem(item)) prefix += "🛒 ";
+  if (Boolean(item?.small_shop)) prefix += "🎒 ";
+  return prefix;
 }
 
 async function loadLocal() {
