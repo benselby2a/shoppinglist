@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v71";
+const APP_VERSION = "v77";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -68,7 +68,7 @@ const el = {
   addCard: document.querySelector(".add-card"),
   addForm: document.getElementById("add-form"),
   addFabBtn: document.getElementById("add-fab-btn"),
-  addBigShopBtn: document.getElementById("add-big-shop-btn"),
+  addBigShopCheckbox: document.getElementById("add-big-shop-checkbox"),
   optionsFabBtn: document.getElementById("options-fab-btn"),
   optionsMenu: document.getElementById("options-menu"),
   itemName: document.getElementById("item-entry"),
@@ -119,6 +119,7 @@ async function init() {
   state.hideBigShopItems = localStorage.getItem(HIDE_BIG_SHOP_FILTER_KEY) === "true";
   renderBigShopFilterButton();
   setAddCardCollapsed(localStorage.getItem(ADD_CARD_COLLAPSED_KEY) === "true");
+  el.addBigShopCheckbox.checked = true;
   await seedSuggestionsFromItems();
   render();
   renderSuggestions();
@@ -163,7 +164,6 @@ function bindEvents() {
   });
 
   el.addForm.addEventListener("submit", onAddItemSubmit);
-  el.addBigShopBtn.addEventListener("click", () => toggleAddFlag(el.addBigShopBtn));
   el.itemName.addEventListener("input", scheduleSuggestionsRender);
   el.itemName.addEventListener("focus", renderSuggestions);
 
@@ -264,12 +264,12 @@ async function onAddItemSubmit(e) {
   render();
   enqueue("upsert", item).catch(() => {});
   upsertSuggestion(name, item.section).catch(() => {});
-  if (el.addBigShopBtn.classList.contains("is-active")) {
+  if (el.addBigShopCheckbox.checked) {
     setBigShop(name, true, item.section).catch(() => {});
   }
 
   el.addForm.reset();
-  setAddFlagState(el.addBigShopBtn, false);
+  el.addBigShopCheckbox.checked = true;
   renderSuggestions();
   setAddCardCollapsed(true);
   syncNow();
@@ -798,7 +798,7 @@ function applySectionGuess(queryLower) {
 function applyAddFlagDefaults(queryLower) {
   const q = (queryLower || "").trim();
   if (!q) {
-    setAddFlagState(el.addBigShopBtn, false);
+    el.addBigShopCheckbox.checked = true;
     return;
   }
 
@@ -806,7 +806,7 @@ function applyAddFlagDefaults(queryLower) {
     const name = (s.name || "").trim().toLowerCase();
     return name === q;
   });
-  setAddFlagState(el.addBigShopBtn, Boolean(match?.big_shop));
+  el.addBigShopCheckbox.checked = match ? Boolean(match.big_shop) : true;
 }
 
 function guessSection(queryLower) {
@@ -1258,17 +1258,6 @@ function isActiveDuplicateName(name) {
   const key = canonicalNameKey(name);
   if (!key) return false;
   return getActiveUncheckedNameKeys().has(key);
-}
-
-function toggleAddFlag(button) {
-  const next = !button.classList.contains("is-active");
-  setAddFlagState(button, next);
-}
-
-function setAddFlagState(button, active) {
-  if (!button) return;
-  button.classList.toggle("is-active", active);
-  button.setAttribute("aria-pressed", active ? "true" : "false");
 }
 
 function isBigShopItem(item) {

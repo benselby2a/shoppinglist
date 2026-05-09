@@ -18,7 +18,6 @@
       <header class="topbar">
         <div>
           <h1>🐳🛒 MSL <span id="app-version" class="app-version"></span></h1>
-          <p id="household-label">🐳 Manatee Shopping List</p>
         </div>
       </header>
 
@@ -51,7 +50,10 @@
             <select id="item-section"></select>
             <input id="item-qty" name="shopping-qty" placeholder="Qty" autocomplete="off" />
             <div class="add-flags-row">
-              <button id="add-big-shop-btn" class="add-flag-btn" type="button" aria-pressed="false">🛒 Big Shop</button>
+              <label class="add-flag-check">
+                <input id="add-big-shop-checkbox" type="checkbox" />
+                <span>🛒 Big Shop</span>
+              </label>
             </div>
             <button id="add-item-btn" class="add-submit-btn" type="submit" tabindex="0">Add Item</button>
           </div>
