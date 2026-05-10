@@ -479,7 +479,6 @@ body.options-menu-open::before {
   margin: 10px 0 0;
   padding: 0;
 }
-#meal-picker-filter,
 .meal-editor-form input,
 .meal-editor-form textarea {
   width: 100%;
@@ -865,7 +864,6 @@ body.add-panel-collapsed .options-fab-btn {
     min-height: 48px;
   }
   #add-meal-filter,
-  #meal-picker-filter,
   .meal-editor-form input,
   .meal-editor-form textarea,
   .add-card input,

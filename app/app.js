@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v119";
+const APP_VERSION = "v121";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -117,10 +117,6 @@ const el = {
   appVersion: document.getElementById("app-version"),
 
   appShell: document.querySelector(".app-shell"),
-  mealPickerModal: document.getElementById("meal-picker-modal"),
-  closeMealPickerBtn: document.getElementById("close-meal-picker-btn"),
-  mealPickerFilter: document.getElementById("meal-picker-filter"),
-  mealPickerList: document.getElementById("meal-picker-list"),
   mealEditorModal: document.getElementById("meal-editor-modal"),
   closeMealEditorBtn: document.getElementById("close-meal-editor-btn"),
   mealEditorForm: document.getElementById("meal-editor-form"),
@@ -290,12 +286,7 @@ function bindEvents() {
   });
 
   el.closeCheckedBtn.addEventListener("click", closeCheckedModal);
-  el.closeMealPickerBtn.addEventListener("click", closeMealPicker);
   el.closeMealEditorBtn.addEventListener("click", closeMealEditor);
-  el.mealPickerFilter.addEventListener("input", () => {
-    state.mealPickerQuery = el.mealPickerFilter.value.trim();
-    renderMealPicker();
-  });
   el.mealEditorForm.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     await saveNewMealFromEditor();
@@ -859,19 +850,6 @@ function updateAddMealSubmitButton() {
     : "Add meal items to list";
 }
 
-function openMealPicker() {
-  el.mealPickerModal.classList.add("is-open");
-  el.appShell.classList.add("modal-focus");
-  state.mealPickerQuery = "";
-  el.mealPickerFilter.value = "";
-  renderMealPicker();
-}
-
-function closeMealPicker() {
-  el.mealPickerModal.classList.remove("is-open");
-  el.appShell.classList.remove("modal-focus");
-}
-
 function openMealEditor() {
   el.mealEditorModal.classList.add("is-open");
   el.appShell.classList.add("modal-focus");
@@ -907,37 +885,6 @@ function closeAddMealPopup() {
   state.mealDraftItems = [];
   hideMealItemSuggestions();
   el.addMealPopup.hidden = true;
-}
-
-function renderMealPicker() {
-  const q = state.mealPickerQuery.toLowerCase();
-  const meals = [...state.meals]
-    .filter((m) => !q || (m.name || "").toLowerCase().includes(q))
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  el.mealPickerList.innerHTML = "";
-  if (!meals.length) {
-    const li = document.createElement("li");
-    li.className = "item-row";
-    li.textContent = "No meals yet. Create one in Manage Meals.";
-    el.mealPickerList.appendChild(li);
-    return;
-  }
-
-  for (const meal of meals) {
-    const li = document.createElement("li");
-    li.className = "item-row";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "item-main-btn";
-    const count = state.mealItems.filter((i) => i.meal_id === meal.id).length;
-    btn.innerHTML = `<span class="item-name-text">${escapeHtml(meal.name)}</span><span class="item-qty">${count} items</span>`;
-    btn.addEventListener("click", async () => {
-      await addMealToList(meal.id);
-      closeMealPicker();
-    });
-    li.appendChild(btn);
-    el.mealPickerList.appendChild(li);
-  }
 }
 
 function renderMealEditorList() {
@@ -991,17 +938,50 @@ function closeMealEditPopup() {
   el.mealEditPopup.hidden = true;
 }
 
-function renderMealEditDraftItems() {
-  el.mealEditDraftList.innerHTML = "";
-  if (!state.mealEditDraftItems.length) {
+function getMealBuilderElements(mode) {
+  if (mode === "edit") {
+    return {
+      entryEl: el.mealEditItemEntry,
+      optionsEl: el.mealEditItemOptions,
+      sectionEl: el.mealEditItemSection,
+      listEl: el.mealEditDraftList
+    };
+  }
+  return {
+    entryEl: el.mealItemEntry,
+    optionsEl: el.mealItemOptions,
+    sectionEl: el.mealItemSection,
+    listEl: el.mealDraftList
+  };
+}
+
+function getMealDraftItemsForMode(mode) {
+  return mode === "edit" ? state.mealEditDraftItems : state.mealDraftItems;
+}
+
+function getMealSuggestionActiveIndex(mode) {
+  return mode === "edit" ? mealEditSuggestionActiveIndex : mealSuggestionActiveIndex;
+}
+
+function setMealSuggestionActiveIndex(mode, value) {
+  if (mode === "edit") mealEditSuggestionActiveIndex = value;
+  else mealSuggestionActiveIndex = value;
+}
+
+function renderMealDraftItemsFor(mode) {
+  const { listEl } = getMealBuilderElements(mode);
+  const draftItems = getMealDraftItemsForMode(mode);
+  listEl.innerHTML = "";
+  if (!draftItems.length) {
     const li = document.createElement("li");
     li.className = "item-row";
     li.textContent = "No items yet. Add one above.";
-    el.mealEditDraftList.appendChild(li);
+    listEl.appendChild(li);
     return;
   }
-  for (let i = 0; i < state.mealEditDraftItems.length; i += 1) {
-    const draft = state.mealEditDraftItems[i];
+
+  for (let i = 0; i < draftItems.length; i += 1) {
+    const draft = draftItems[i];
     const li = document.createElement("li");
     li.className = "item-row";
     li.innerHTML = `
@@ -1012,37 +992,42 @@ function renderMealEditDraftItems() {
       <button class="db-icon-btn db-delete-btn" type="button" aria-label="Remove meal item">🗑</button>
     `;
     li.querySelector("button").addEventListener("click", () => {
-      state.mealEditDraftItems.splice(i, 1);
-      renderMealEditDraftItems();
+      draftItems.splice(i, 1);
+      renderMealDraftItemsFor(mode);
     });
-    el.mealEditDraftList.appendChild(li);
+    listEl.appendChild(li);
   }
 }
 
-function addMealEditDraftItemFromInput() {
-  const name = normalizeItemName(el.mealEditItemEntry.value);
+function addMealDraftItemFromInputFor(mode) {
+  const { entryEl, sectionEl } = getMealBuilderElements(mode);
+  const draftItems = getMealDraftItemsForMode(mode);
+  const name = normalizeItemName(entryEl.value);
   if (!name) return;
   const key = canonicalNameKey(name);
   if (!key) return;
-  if (state.mealEditDraftItems.some((x) => canonicalNameKey(x.name) === key)) {
+  if (draftItems.some((x) => canonicalNameKey(x.name) === key)) {
     showInfoToast(`${name} already in meal`);
     return;
   }
-  const section = normalizeSection(el.mealEditItemSection.value)
+
+  const section = normalizeSection(sectionEl.value)
     || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
     || guessSection(name.toLowerCase())
     || SECTIONS[0];
-  state.mealEditDraftItems.push({ name, section });
-  renderMealEditDraftItems();
-  el.mealEditItemEntry.value = "";
-  el.mealEditItemSection.value = section;
-  hideMealEditItemSuggestions();
-  el.mealEditItemEntry.focus();
+  draftItems.push({ name, section });
+  renderMealDraftItemsFor(mode);
+  entryEl.value = "";
+  sectionEl.value = section;
+  hideMealItemSuggestionsFor(mode);
+  entryEl.focus();
 }
 
-function renderMealEditItemSuggestions() {
-  const q = el.mealEditItemEntry.value.trim().toLowerCase();
-  if (q.length < 2) return hideMealEditItemSuggestions();
+function renderMealItemSuggestionsFor(mode) {
+  const { entryEl, optionsEl, sectionEl } = getMealBuilderElements(mode);
+  const q = entryEl.value.trim().toLowerCase();
+  if (q.length < 2) return hideMealItemSuggestionsFor(mode);
+
   const byKey = new Map();
   for (const s of state.suggestionIndex) {
     const key = canonicalNameKey(s.name);
@@ -1050,224 +1035,101 @@ function renderMealEditItemSuggestions() {
     byKey.set(key, s.name);
   }
   const matches = [...byKey.values()].filter((name) => name.toLowerCase().includes(q)).slice(0, 8);
-  if (!matches.length) return hideMealEditItemSuggestions();
-  mealEditSuggestionActiveIndex = -1;
-  el.mealEditItemOptions.innerHTML = matches
+  if (!matches.length) return hideMealItemSuggestionsFor(mode);
+
+  setMealSuggestionActiveIndex(mode, -1);
+  optionsEl.innerHTML = matches
     .map((name) => `<button class="item-option-btn" type="button" data-value="${escapeHtml(name)}"><span>${escapeHtml(name)}</span></button>`)
     .join("");
-  el.mealEditItemOptions.hidden = false;
-  for (const btn of el.mealEditItemOptions.querySelectorAll(".item-option-btn")) {
+  optionsEl.hidden = false;
+  for (const btn of optionsEl.querySelectorAll(".item-option-btn")) {
     btn.addEventListener("click", () => {
       const value = btn.getAttribute("data-value") || "";
-      el.mealEditItemEntry.value = value;
+      entryEl.value = value;
       const key = canonicalNameKey(value);
       const section = normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
         || guessSection(value.toLowerCase())
         || SECTIONS[0];
-      el.mealEditItemSection.value = section;
-      hideMealEditItemSuggestions();
-      el.mealEditItemEntry.focus();
+      sectionEl.value = section;
+      hideMealItemSuggestionsFor(mode);
+      entryEl.focus();
     });
   }
-  syncMealEditSuggestionActiveState();
+  syncMealSuggestionActiveStateFor(mode);
 }
 
-function hideMealEditItemSuggestions() {
-  mealEditSuggestionActiveIndex = -1;
-  el.mealEditItemOptions.innerHTML = "";
-  el.mealEditItemOptions.hidden = true;
+function hideMealItemSuggestionsFor(mode) {
+  const { optionsEl } = getMealBuilderElements(mode);
+  setMealSuggestionActiveIndex(mode, -1);
+  optionsEl.innerHTML = "";
+  optionsEl.hidden = true;
 }
 
-function onMealEditSuggestionKeyDown(ev) {
-  if (el.mealEditItemOptions.hidden) {
+function onMealSuggestionKeyDownFor(mode, ev) {
+  const { optionsEl } = getMealBuilderElements(mode);
+  if (optionsEl.hidden) {
     if (ev.key === "Enter") {
       ev.preventDefault();
-      addMealEditDraftItemFromInput();
-    }
-    return;
-  }
-  const options = [...el.mealEditItemOptions.querySelectorAll(".item-option-btn")];
-  if (!options.length) return;
-  if (ev.key === "ArrowDown") {
-    ev.preventDefault();
-    mealEditSuggestionActiveIndex = Math.min(options.length - 1, mealEditSuggestionActiveIndex + 1);
-    return syncMealEditSuggestionActiveState();
-  }
-  if (ev.key === "ArrowUp") {
-    ev.preventDefault();
-    mealEditSuggestionActiveIndex = Math.max(0, mealEditSuggestionActiveIndex - 1);
-    return syncMealEditSuggestionActiveState();
-  }
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    if (mealEditSuggestionActiveIndex >= 0 && options[mealEditSuggestionActiveIndex]) return options[mealEditSuggestionActiveIndex].click();
-    return addMealEditDraftItemFromInput();
-  }
-  if (ev.key === "Escape") {
-    ev.preventDefault();
-    hideMealEditItemSuggestions();
-  }
-}
-
-function syncMealEditSuggestionActiveState() {
-  const options = [...el.mealEditItemOptions.querySelectorAll(".item-option-btn")];
-  if (!options.length) return;
-  options.forEach((btn, idx) => btn.classList.toggle("is-active", idx === mealEditSuggestionActiveIndex));
-  const active = options[mealEditSuggestionActiveIndex];
-  if (active) active.scrollIntoView({ block: "nearest" });
-}
-
-function renderMealDraftItems() {
-  el.mealDraftList.innerHTML = "";
-  if (!state.mealDraftItems.length) {
-    const li = document.createElement("li");
-    li.className = "item-row";
-    li.textContent = "No items yet. Add one above.";
-    el.mealDraftList.appendChild(li);
-    return;
-  }
-
-  for (let i = 0; i < state.mealDraftItems.length; i += 1) {
-    const draft = state.mealDraftItems[i];
-    const li = document.createElement("li");
-    li.className = "item-row";
-    li.innerHTML = `
-      <div>
-        <span class="item-name">${escapeHtml(draft.name)}</span>
-        <div class="item-qty">${escapeHtml(draft.section || "")}</div>
-      </div>
-      <button class="db-icon-btn db-delete-btn" type="button" aria-label="Remove meal item">🗑</button>
-    `;
-    const removeBtn = li.querySelector("button");
-    removeBtn.addEventListener("click", () => {
-      state.mealDraftItems.splice(i, 1);
-      renderMealDraftItems();
-    });
-    el.mealDraftList.appendChild(li);
-  }
-}
-
-function addMealDraftItemFromInput() {
-  const name = normalizeItemName(el.mealItemEntry.value);
-  if (!name) return;
-  const key = canonicalNameKey(name);
-  if (!key) return;
-  if (state.mealDraftItems.some((x) => canonicalNameKey(x.name) === key)) {
-    showInfoToast(`${name} already in meal`);
-    return;
-  }
-
-  const section = normalizeSection(el.mealItemSection.value)
-    || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
-    || guessSection(name.toLowerCase())
-    || SECTIONS[0];
-  state.mealDraftItems.push({ name, section });
-  renderMealDraftItems();
-  el.mealItemEntry.value = "";
-  el.mealItemSection.value = section;
-  hideMealItemSuggestions();
-  el.mealItemEntry.focus();
-}
-
-function renderMealItemSuggestions() {
-  const q = el.mealItemEntry.value.trim().toLowerCase();
-  if (q.length < 2) {
-    hideMealItemSuggestions();
-    return;
-  }
-
-  const byKey = new Map();
-  for (const s of state.suggestionIndex) {
-    const key = canonicalNameKey(s.name);
-    if (!key || byKey.has(key)) continue;
-    byKey.set(key, s.name);
-  }
-  const matches = [...byKey.values()]
-    .filter((name) => name.toLowerCase().includes(q))
-    .slice(0, 8);
-  if (!matches.length) {
-    hideMealItemSuggestions();
-    return;
-  }
-
-  mealSuggestionActiveIndex = -1;
-  el.mealItemOptions.innerHTML = matches
-    .map((name) => `<button class="item-option-btn" type="button" data-value="${escapeHtml(name)}"><span>${escapeHtml(name)}</span></button>`)
-    .join("");
-  el.mealItemOptions.hidden = false;
-  for (const btn of el.mealItemOptions.querySelectorAll(".item-option-btn")) {
-    btn.addEventListener("click", () => {
-      const value = btn.getAttribute("data-value") || "";
-      el.mealItemEntry.value = value;
-      const key = canonicalNameKey(value);
-      const section = normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
-        || guessSection(value.toLowerCase())
-        || SECTIONS[0];
-      el.mealItemSection.value = section;
-      hideMealItemSuggestions();
-      el.mealItemEntry.focus();
-    });
-  }
-  syncMealSuggestionActiveState();
-}
-
-function hideMealItemSuggestions() {
-  mealSuggestionActiveIndex = -1;
-  el.mealItemOptions.innerHTML = "";
-  el.mealItemOptions.hidden = true;
-}
-
-function onMealSuggestionKeyDown(ev) {
-  if (el.mealItemOptions.hidden) {
-    if (ev.key === "Enter") {
-      ev.preventDefault();
-      addMealDraftItemFromInput();
+      addMealDraftItemFromInputFor(mode);
     }
     return;
   }
 
-  const options = [...el.mealItemOptions.querySelectorAll(".item-option-btn")];
+  const options = [...optionsEl.querySelectorAll(".item-option-btn")];
   if (!options.length) return;
 
   if (ev.key === "ArrowDown") {
     ev.preventDefault();
-    mealSuggestionActiveIndex = Math.min(options.length - 1, mealSuggestionActiveIndex + 1);
-    syncMealSuggestionActiveState();
+    setMealSuggestionActiveIndex(mode, Math.min(options.length - 1, getMealSuggestionActiveIndex(mode) + 1));
+    syncMealSuggestionActiveStateFor(mode);
     return;
   }
 
   if (ev.key === "ArrowUp") {
     ev.preventDefault();
-    mealSuggestionActiveIndex = Math.max(0, mealSuggestionActiveIndex - 1);
-    syncMealSuggestionActiveState();
+    setMealSuggestionActiveIndex(mode, Math.max(0, getMealSuggestionActiveIndex(mode) - 1));
+    syncMealSuggestionActiveStateFor(mode);
     return;
   }
 
   if (ev.key === "Enter") {
     ev.preventDefault();
-    if (mealSuggestionActiveIndex >= 0 && options[mealSuggestionActiveIndex]) {
-      options[mealSuggestionActiveIndex].click();
+    const idx = getMealSuggestionActiveIndex(mode);
+    if (idx >= 0 && options[idx]) {
+      options[idx].click();
       return;
     }
-    addMealDraftItemFromInput();
+    addMealDraftItemFromInputFor(mode);
     return;
   }
 
   if (ev.key === "Escape") {
     ev.preventDefault();
-    hideMealItemSuggestions();
+    hideMealItemSuggestionsFor(mode);
   }
 }
 
-function syncMealSuggestionActiveState() {
-  const options = [...el.mealItemOptions.querySelectorAll(".item-option-btn")];
+function syncMealSuggestionActiveStateFor(mode) {
+  const { optionsEl } = getMealBuilderElements(mode);
+  const options = [...optionsEl.querySelectorAll(".item-option-btn")];
   if (!options.length) return;
-  options.forEach((btn, idx) => {
-    btn.classList.toggle("is-active", idx === mealSuggestionActiveIndex);
-  });
-  const active = options[mealSuggestionActiveIndex];
+  const idx = getMealSuggestionActiveIndex(mode);
+  options.forEach((btn, i) => btn.classList.toggle("is-active", i === idx));
+  const active = options[idx];
   if (active) active.scrollIntoView({ block: "nearest" });
 }
+
+function renderMealEditDraftItems() { renderMealDraftItemsFor("edit"); }
+function addMealEditDraftItemFromInput() { addMealDraftItemFromInputFor("edit"); }
+function renderMealEditItemSuggestions() { renderMealItemSuggestionsFor("edit"); }
+function hideMealEditItemSuggestions() { hideMealItemSuggestionsFor("edit"); }
+function onMealEditSuggestionKeyDown(ev) { onMealSuggestionKeyDownFor("edit", ev); }
+
+function renderMealDraftItems() { renderMealDraftItemsFor("add"); }
+function addMealDraftItemFromInput() { addMealDraftItemFromInputFor("add"); }
+function renderMealItemSuggestions() { renderMealItemSuggestionsFor("add"); }
+function hideMealItemSuggestions() { hideMealItemSuggestionsFor("add"); }
+function onMealSuggestionKeyDown(ev) { onMealSuggestionKeyDownFor("add", ev); }
 
 async function saveNewMealFromEditor() {
   const name = normalizeItemName(el.mealNameInput.value);
@@ -1953,20 +1815,24 @@ function inferPendingTable(op) {
 
 function detectConflicts(localItems, mergedItems) {
   const localById = new Map(localItems.map((i) => [i.id, i]));
-  const pendingIds = new Set(
-    state.pending
-      .map((op) => op?.payload?.id)
-      .filter(Boolean)
-  );
+  const pendingShoppingById = new Map();
+  for (const op of state.pending) {
+    if (inferPendingTable(op) !== "shopping_items") continue;
+    const id = op?.payload?.id;
+    if (!id) continue;
+    pendingShoppingById.set(id, op.payload);
+  }
 
   for (const remote of mergedItems) {
     const local = localById.get(remote.id);
     if (!local) continue;
+    const pendingPayload = pendingShoppingById.get(remote.id);
+    if (!pendingPayload) continue;
     const rts = new Date(remote.updated_at).getTime();
     const lts = new Date(local.updated_at).getTime();
     if (rts <= lts) continue;
-    if (!pendingIds.has(remote.id)) continue;
-    if (!hasMaterialDifference(local, remote)) continue;
+    // Only flag genuine write-write divergence for unsynced shopping-item writes.
+    if (!hasMaterialDifference(pendingPayload, remote)) continue;
     queueConflict(describeRemoteResolution(local, remote));
   }
 }
@@ -2356,7 +2222,6 @@ async function syncMealsFromRemote() {
   state.meals = mergeById(state.meals, remoteMeals);
   state.mealItems = mergeById(state.mealItems, remoteMealItems);
   await persistLocal();
-  renderMealPicker();
   renderAddMealSuggestions();
   renderMealEditorList();
 }
