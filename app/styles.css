@@ -116,11 +116,13 @@ body.options-menu-open::before {
 }
 .add-card button { background: var(--brand); color: #fff; border: none; font-weight: 600; }
 .add-card {
-  position: sticky;
-  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-  z-index: 12;
-  margin-top: 12px;
-  margin-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(860px, calc(100vw - 24px));
+  bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  z-index: 1000;
+  margin: 0;
   background: linear-gradient(180deg, #e5f4ff 0%, #d2ebff 100%);
   border: 1px solid #95c2e0;
   box-shadow: 0 10px 26px rgb(0 83 131 / 0.18);
@@ -171,12 +173,6 @@ body.options-menu-open::before {
   border-color: var(--brand);
   box-shadow: inset 0 0 0 2px #ffffff, 0 0 0 2px var(--brand);
 }
-#add-meal-pane .item-options {
-  margin-left: 12px;
-  margin-right: 12px;
-  margin-top: -4px;
-  max-height: 300px;
-}
 #add-item-pane[hidden],
 #add-meal-pane[hidden] {
   display: none !important;
@@ -184,6 +180,47 @@ body.options-menu-open::before {
 .add-submit-btn {
   min-height: 64px;
   align-self: stretch;
+}
+#add-meal-pane .meal-list {
+  margin: 0;
+  padding: 4px;
+  border: 1px solid #c8deee;
+  border-radius: 10px;
+  background: #fff;
+  max-height: min(34vh, 300px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#add-meal-pane .meal-list-item {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#add-meal-pane .meal-list-item + .meal-list-item {
+  margin-top: 4px;
+}
+#add-meal-pane .meal-list-empty {
+  list-style: none;
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 0.95rem;
+}
+#add-meal-pane .meal-list-btn {
+  width: 100%;
+  border: 1px solid #eaf2f8;
+  background: #f7fbff;
+  color: #4f6475;
+  border-radius: 8px;
+  text-align: left;
+  padding: 10px 12px;
+  min-height: 44px;
+  font-weight: 600;
+}
+#add-meal-pane .meal-list-btn.is-active {
+  background: #fff;
+  color: var(--text);
+  border: 2px solid #7bb6df;
+  box-shadow: inset 0 0 0 1px #d8ebf8;
 }
 .item-options {
   margin-left: 12px;
@@ -856,14 +893,14 @@ body.add-panel-collapsed .options-fab-btn {
     min-height: 58px;
   }
   .add-card {
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    width: min(860px, calc(100vw - 20px));
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
     max-height: min(58vh, 500px);
     padding: 16px;
   }
   .add-mode-tab {
     min-height: 48px;
   }
-  #add-meal-filter,
   .meal-editor-form input,
   .meal-editor-form textarea,
   .add-card input,

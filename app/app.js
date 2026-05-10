@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v121";
+const APP_VERSION = "v123";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -59,7 +59,6 @@ const state = {
   dbFilterQuery: "",
   meals: [],
   mealItems: [],
-  mealPickerQuery: "",
   mealDraftItems: [],
   addMode: "item",
   selectedAddMealId: null,
@@ -82,8 +81,7 @@ const el = {
   addModeMealBtn: document.getElementById("add-mode-meal-btn"),
   addItemPane: document.getElementById("add-item-pane"),
   addMealPane: document.getElementById("add-meal-pane"),
-  addMealFilter: document.getElementById("add-meal-filter"),
-  addMealOptions: document.getElementById("add-meal-options"),
+  addMealList: document.getElementById("add-meal-list"),
   addSelectedMealBtn: document.getElementById("add-selected-meal-btn"),
   optionsFabBtn: document.getElementById("options-fab-btn"),
   optionsMenu: document.getElementById("options-menu"),
@@ -149,7 +147,6 @@ let suggestionTimer = null;
 let lastSuggestionQuery = "";
 let suggestionActiveIndex = -1;
 let mealSuggestionActiveIndex = -1;
-let addMealSuggestionActiveIndex = -1;
 let mealEditSuggestionActiveIndex = -1;
 let checkToastTimer = null;
 let checkToastMode = "undo";
@@ -252,15 +249,6 @@ function bindEvents() {
   });
   el.addModeItemBtn.addEventListener("click", () => setAddMode("item"));
   el.addModeMealBtn.addEventListener("click", () => setAddMode("meal"));
-  el.addMealFilter.addEventListener("input", () => {
-    state.mealPickerQuery = el.addMealFilter.value.trim();
-    renderAddMealSuggestions();
-  });
-  el.addMealFilter.addEventListener("focus", renderAddMealSuggestions);
-  el.addMealFilter.addEventListener("keydown", onAddMealSuggestionKeyDown);
-  el.addMealFilter.addEventListener("blur", () => {
-    setTimeout(hideAddMealSuggestions, 120);
-  });
   el.addSelectedMealBtn.addEventListener("click", async () => {
     if (!state.selectedAddMealId) return;
     await addMealToList(state.selectedAddMealId);
@@ -728,118 +716,47 @@ function setAddMode(mode) {
   el.addItemPane.hidden = !itemMode;
   el.addMealPane.hidden = itemMode;
   if (!itemMode) {
-    state.mealPickerQuery = "";
-    el.addMealFilter.value = "";
     state.selectedAddMealId = null;
-    renderAddMealSuggestions();
+    renderAddMealList();
   }
 }
 
-function renderAddMealSuggestions() {
-  const q = state.mealPickerQuery.toLowerCase();
-  if (q.length < 2) {
-    hideAddMealSuggestions();
-    updateAddMealSubmitButton();
-    return;
+function renderAddMealList() {
+  const meals = [...state.meals].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  if (state.selectedAddMealId && !meals.some((meal) => meal.id === state.selectedAddMealId)) {
+    state.selectedAddMealId = null;
   }
-  const meals = [...state.meals]
-    .filter((m) => !q || (m.name || "").toLowerCase().includes(q))
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-  const exactMeal = state.meals.find((m) => (m.name || "").toLowerCase() === q);
-  if (exactMeal) {
-    state.selectedAddMealId = exactMeal.id;
-    hideAddMealSuggestions();
-    updateAddMealSubmitButton();
-    return;
-  }
-  el.addMealOptions.innerHTML = "";
+  el.addMealList.innerHTML = "";
   if (!meals.length) {
-    state.selectedAddMealId = null;
-    el.addSelectedMealBtn.disabled = true;
-    el.addSelectedMealBtn.textContent = "Add meal items to list";
-    hideAddMealSuggestions();
+    const li = document.createElement("li");
+    li.className = "meal-list-empty";
+    li.textContent = "No meals yet. Create one in Manage Meals.";
+    el.addMealList.appendChild(li);
+    updateAddMealSubmitButton();
     return;
   }
 
-  const visibleMeals = meals.slice(0, 12);
-  addMealSuggestionActiveIndex = -1;
-  el.addMealOptions.innerHTML = visibleMeals
-    .map((meal) => `<button class="item-option-btn${state.selectedAddMealId === meal.id ? " is-active" : ""}" type="button" data-id="${escapeHtml(meal.id)}"><span>${escapeHtml(meal.name)}</span></button>`)
-    .join("");
-  el.addMealOptions.hidden = false;
-  for (const btn of el.addMealOptions.querySelectorAll(".item-option-btn")) {
+  for (const meal of meals) {
+    const li = document.createElement("li");
+    li.className = "meal-list-item";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "meal-list-btn";
+    if (state.selectedAddMealId === meal.id) btn.classList.add("is-active");
+    btn.setAttribute("aria-pressed", state.selectedAddMealId === meal.id ? "true" : "false");
+    btn.textContent = meal.name;
     btn.addEventListener("click", () => {
-      const mealId = btn.getAttribute("data-id") || "";
-      state.selectedAddMealId = mealId;
-      const meal = state.meals.find((m) => m.id === mealId);
-      if (meal?.name) el.addMealFilter.value = meal.name;
-      hideAddMealSuggestions();
-      updateAddMealSubmitButton();
+      state.selectedAddMealId = meal.id;
+      renderAddMealList();
     });
+
+    li.appendChild(btn);
+    el.addMealList.appendChild(li);
   }
 
-  if (state.selectedAddMealId && !visibleMeals.some((m) => m.id === state.selectedAddMealId) && !meals.some((m) => m.id === state.selectedAddMealId)) {
-    state.selectedAddMealId = null;
-  }
-  syncAddMealSuggestionActiveState();
   updateAddMealSubmitButton();
-}
-
-function hideAddMealSuggestions() {
-  addMealSuggestionActiveIndex = -1;
-  el.addMealOptions.innerHTML = "";
-  el.addMealOptions.hidden = true;
-}
-
-function onAddMealSuggestionKeyDown(ev) {
-  if (ev.key === "Enter" && el.addMealOptions.hidden) {
-    ev.preventDefault();
-    if (state.selectedAddMealId) el.addSelectedMealBtn.click();
-    return;
-  }
-
-  const options = [...el.addMealOptions.querySelectorAll(".item-option-btn")];
-  if (!options.length) return;
-
-  if (ev.key === "ArrowDown") {
-    ev.preventDefault();
-    addMealSuggestionActiveIndex = Math.min(options.length - 1, addMealSuggestionActiveIndex + 1);
-    syncAddMealSuggestionActiveState();
-    return;
-  }
-
-  if (ev.key === "ArrowUp") {
-    ev.preventDefault();
-    addMealSuggestionActiveIndex = Math.max(0, addMealSuggestionActiveIndex - 1);
-    syncAddMealSuggestionActiveState();
-    return;
-  }
-
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    if (addMealSuggestionActiveIndex >= 0 && options[addMealSuggestionActiveIndex]) {
-      options[addMealSuggestionActiveIndex].click();
-      return;
-    }
-    if (state.selectedAddMealId) el.addSelectedMealBtn.click();
-    return;
-  }
-
-  if (ev.key === "Escape") {
-    ev.preventDefault();
-    hideAddMealSuggestions();
-  }
-}
-
-function syncAddMealSuggestionActiveState() {
-  const options = [...el.addMealOptions.querySelectorAll(".item-option-btn")];
-  if (!options.length) return;
-  options.forEach((btn, idx) => {
-    btn.classList.toggle("is-active", idx === addMealSuggestionActiveIndex);
-  });
-  const active = options[addMealSuggestionActiveIndex];
-  if (active) active.scrollIntoView({ block: "nearest" });
 }
 
 function updateAddMealSubmitButton() {
@@ -1186,6 +1103,7 @@ async function saveNewMealFromEditor() {
   await enqueue("upsert", meal, "meals");
   await persistLocal();
   renderMealEditorList();
+  renderAddMealList();
   state.mealDraftItems = [];
   el.mealNameInput.value = "";
   renderMealDraftItems();
@@ -1240,6 +1158,7 @@ async function saveEditedMeal() {
   await persistLocal();
   closeMealEditPopup();
   renderMealEditorList();
+  renderAddMealList();
   showInfoToast("Meal updated");
   syncNow();
 }
@@ -1260,6 +1179,7 @@ async function deleteEditedMeal() {
   }
   closeMealEditPopup();
   renderMealEditorList();
+  renderAddMealList();
   showInfoToast("Meal deleted");
 }
 
@@ -1315,6 +1235,7 @@ async function addMealToList(mealId) {
   }
 
   render();
+  setAddCardCollapsed(true);
   syncNow();
   showInfoToast(`Added ${added} from ${meal.name}${skipped ? `, skipped ${skipped}` : ""}`);
 }
@@ -1493,7 +1414,11 @@ function setAddCardCollapsed(collapsed) {
       if (state.addMode === "item") {
         el.itemName.focus();
       } else {
-        el.addMealFilter.focus();
+        const selectedMealBtn = el.addMealList.querySelector(".meal-list-btn.is-active");
+        const firstMealBtn = el.addMealList.querySelector(".meal-list-btn");
+        if (selectedMealBtn) selectedMealBtn.focus();
+        else if (firstMealBtn) firstMealBtn.focus();
+        else el.addSelectedMealBtn.focus();
       }
     });
   }
@@ -2222,7 +2147,7 @@ async function syncMealsFromRemote() {
   state.meals = mergeById(state.meals, remoteMeals);
   state.mealItems = mergeById(state.mealItems, remoteMealItems);
   await persistLocal();
-  renderAddMealSuggestions();
+  renderAddMealList();
   renderMealEditorList();
 }
 
