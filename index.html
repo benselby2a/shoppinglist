@@ -32,7 +32,11 @@
 
       <section class="card add-card">
         <form id="add-form" autocomplete="off">
-          <div class="add-layout">
+          <div class="add-mode-tabs">
+            <button id="add-mode-item-btn" class="add-mode-tab is-active" type="button">Item</button>
+            <button id="add-mode-meal-btn" class="add-mode-tab" type="button">Meal</button>
+          </div>
+          <div id="add-item-pane" class="add-layout">
             <input
               id="item-entry"
               class="add-item-input"
@@ -57,6 +61,11 @@
             </div>
             <button id="add-item-btn" class="add-submit-btn" type="submit" tabindex="0">Add Item</button>
           </div>
+          <div id="add-meal-pane" class="add-layout" hidden>
+            <input id="add-meal-filter" type="text" placeholder="Filter meals" autocomplete="off" />
+            <div id="add-meal-options" class="item-options" hidden></div>
+            <button id="add-selected-meal-btn" class="add-submit-btn" type="button" disabled>Add meal items to list</button>
+          </div>
         </form>
       </section>
       <button id="add-fab-btn" class="add-fab-btn" type="button" aria-label="Add new item" hidden>＋</button>
@@ -64,8 +73,10 @@
         <button id="options-fab-btn" class="options-fab-btn" type="button" aria-label="Show options">☰</button>
         <div id="options-menu" class="options-menu" hidden>
           <button id="top-undo-btn" class="icon-btn" type="button" aria-label="Undo last action" disabled>Undo</button>
+          <button id="check-all-btn" class="icon-btn" type="button">Check All Items</button>
           <button id="small-shop-filter-btn" class="icon-btn" type="button">Hide Big Shop Items</button>
           <button id="add-favourites-btn" class="icon-btn" type="button">Add Favourite Items</button>
+          <button id="manage-meals-btn" class="icon-btn" type="button">Manage Meals</button>
           <button id="show-checked-btn" class="icon-btn" type="button">Show Item Database</button>
         </div>
       </div>
@@ -106,6 +117,73 @@
         <p id="conflict-message"></p>
         <div class="db-actions">
           <button id="resolve-conflict-btn" class="icon-btn" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="meal-picker-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Add Meal</h2>
+          <button id="close-meal-picker-btn" class="icon-btn" type="button">✕</button>
+        </div>
+        <input id="meal-picker-filter" type="text" placeholder="Filter meals" autocomplete="off" />
+        <ul id="meal-picker-list" class="meal-list"></ul>
+      </div>
+    </div>
+
+    <div id="meal-editor-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Manage Meals</h2>
+          <button id="close-meal-editor-btn" class="icon-btn" type="button">✕</button>
+        </div>
+        <h3>Existing Meals</h3>
+        <ul id="meal-editor-list" class="meal-list"></ul>
+
+        <div class="db-actions">
+          <button id="open-add-meal-popup-btn" class="icon-btn" type="button">Add Meal</button>
+        </div>
+
+        <div id="add-meal-popup" class="meal-edit-popup" hidden>
+          <div class="meal-edit-popup-card">
+            <h3>Add Meal</h3>
+            <form id="meal-editor-form" class="meal-editor-form" autocomplete="off">
+              <input id="meal-name-input" type="text" placeholder="Meal name" required />
+              <div class="meal-item-builder">
+                <input id="meal-item-entry" type="text" placeholder="Type item name" autocomplete="off" />
+                <div id="meal-item-options" class="item-options" hidden></div>
+                <select id="meal-item-section"></select>
+                <button id="meal-item-add-btn" class="icon-btn" type="button">Add Meal Item</button>
+              </div>
+              <ul id="meal-draft-list" class="meal-list"></ul>
+              <div class="db-actions">
+                <button id="save-meal-btn" class="icon-btn" type="submit">Save New Meal</button>
+                <button id="close-add-meal-popup-btn" class="icon-btn" type="button">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="meal-edit-popup" class="meal-edit-popup" hidden>
+          <div class="meal-edit-popup-card">
+            <h3>Edit Meal</h3>
+            <form id="meal-edit-form" class="meal-editor-form" autocomplete="off">
+              <input id="meal-edit-name-input" type="text" placeholder="Meal name" required />
+              <div class="meal-item-builder">
+                <input id="meal-edit-item-entry" type="text" placeholder="Type item name" autocomplete="off" />
+                <div id="meal-edit-item-options" class="item-options" hidden></div>
+                <select id="meal-edit-item-section"></select>
+                <button id="meal-edit-item-add-btn" class="icon-btn" type="button">Add Meal Item</button>
+              </div>
+              <ul id="meal-edit-draft-list" class="meal-list"></ul>
+              <div class="db-actions">
+                <button id="meal-edit-save-btn" class="icon-btn" type="submit">Save Changes</button>
+                <button id="meal-edit-delete-btn" class="icon-btn" type="button">Delete Meal</button>
+                <button id="meal-edit-cancel-btn" class="icon-btn" type="button">Cancel</button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>

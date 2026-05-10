@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v93";
+const APP_VERSION = "v114";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -56,7 +56,15 @@ const state = {
   lastSyncAt: null,
   lastAction: null,
   hideBigShopItems: false,
-  dbFilterQuery: ""
+  dbFilterQuery: "",
+  meals: [],
+  mealItems: [],
+  mealPickerQuery: "",
+  mealDraftItems: [],
+  addMode: "item",
+  selectedAddMealId: null,
+  editingMealId: null,
+  mealEditDraftItems: []
 };
 
 const el = {
@@ -70,6 +78,13 @@ const el = {
   addForm: document.getElementById("add-form"),
   addFabBtn: document.getElementById("add-fab-btn"),
   addBigShopCheckbox: document.getElementById("add-big-shop-checkbox"),
+  addModeItemBtn: document.getElementById("add-mode-item-btn"),
+  addModeMealBtn: document.getElementById("add-mode-meal-btn"),
+  addItemPane: document.getElementById("add-item-pane"),
+  addMealPane: document.getElementById("add-meal-pane"),
+  addMealFilter: document.getElementById("add-meal-filter"),
+  addMealOptions: document.getElementById("add-meal-options"),
+  addSelectedMealBtn: document.getElementById("add-selected-meal-btn"),
   optionsFabBtn: document.getElementById("options-fab-btn"),
   optionsMenu: document.getElementById("options-menu"),
   itemName: document.getElementById("item-entry"),
@@ -77,8 +92,10 @@ const el = {
   itemOptions: document.getElementById("item-options"),
 
   topUndoBtn: document.getElementById("top-undo-btn"),
+  checkAllBtn: document.getElementById("check-all-btn"),
   smallShopFilterBtn: document.getElementById("small-shop-filter-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
+  manageMealsBtn: document.getElementById("manage-meals-btn"),
 
   checkedModal: document.getElementById("checked-modal"),
   checkedList: document.getElementById("checked-list"),
@@ -99,7 +116,35 @@ const el = {
   releaseRefreshBtn: document.getElementById("release-refresh-btn"),
   appVersion: document.getElementById("app-version"),
 
-  appShell: document.querySelector(".app-shell")
+  appShell: document.querySelector(".app-shell"),
+  mealPickerModal: document.getElementById("meal-picker-modal"),
+  closeMealPickerBtn: document.getElementById("close-meal-picker-btn"),
+  mealPickerFilter: document.getElementById("meal-picker-filter"),
+  mealPickerList: document.getElementById("meal-picker-list"),
+  mealEditorModal: document.getElementById("meal-editor-modal"),
+  closeMealEditorBtn: document.getElementById("close-meal-editor-btn"),
+  mealEditorForm: document.getElementById("meal-editor-form"),
+  mealNameInput: document.getElementById("meal-name-input"),
+  mealItemEntry: document.getElementById("meal-item-entry"),
+  mealItemOptions: document.getElementById("meal-item-options"),
+  mealItemSection: document.getElementById("meal-item-section"),
+  mealItemAddBtn: document.getElementById("meal-item-add-btn"),
+  mealDraftList: document.getElementById("meal-draft-list"),
+  saveMealBtn: document.getElementById("save-meal-btn"),
+  mealEditorList: document.getElementById("meal-editor-list"),
+  openAddMealPopupBtn: document.getElementById("open-add-meal-popup-btn"),
+  addMealPopup: document.getElementById("add-meal-popup"),
+  closeAddMealPopupBtn: document.getElementById("close-add-meal-popup-btn"),
+  mealEditPopup: document.getElementById("meal-edit-popup"),
+  mealEditForm: document.getElementById("meal-edit-form"),
+  mealEditNameInput: document.getElementById("meal-edit-name-input"),
+  mealEditItemEntry: document.getElementById("meal-edit-item-entry"),
+  mealEditItemOptions: document.getElementById("meal-edit-item-options"),
+  mealEditItemSection: document.getElementById("meal-edit-item-section"),
+  mealEditItemAddBtn: document.getElementById("meal-edit-item-add-btn"),
+  mealEditDraftList: document.getElementById("meal-edit-draft-list"),
+  mealEditDeleteBtn: document.getElementById("meal-edit-delete-btn"),
+  mealEditCancelBtn: document.getElementById("meal-edit-cancel-btn")
 };
 
 const dbPromise = openDB();
@@ -107,6 +152,9 @@ let supabase = null;
 let suggestionTimer = null;
 let lastSuggestionQuery = "";
 let suggestionActiveIndex = -1;
+let mealSuggestionActiveIndex = -1;
+let addMealSuggestionActiveIndex = -1;
+let mealEditSuggestionActiveIndex = -1;
 let checkToastTimer = null;
 let checkToastMode = "undo";
 let dbFeedbackTimer = null;
@@ -117,12 +165,15 @@ async function init() {
   guardPasscode();
   if (el.appVersion) el.appVersion.textContent = APP_VERSION;
   el.sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
+  el.mealItemSection.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
+  el.mealEditItemSection.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
   bindEvents();
   await loadLocal();
   state.hideBigShopItems = localStorage.getItem(HIDE_BIG_SHOP_FILTER_KEY) === "true";
   renderBigShopFilterButton();
-  setAddCardCollapsed(localStorage.getItem(ADD_CARD_COLLAPSED_KEY) === "true");
+  setAddCardCollapsed(true);
   el.addBigShopCheckbox.checked = true;
+  setAddMode("item");
   await seedSuggestionsFromItems();
   render();
   renderSuggestions();
@@ -182,6 +233,11 @@ function bindEvents() {
     el.optionsMenu.hidden = true;
     document.body.classList.remove("options-menu-open");
   });
+  el.checkAllBtn.addEventListener("click", async () => {
+    await checkAllActiveItems();
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  });
   el.smallShopFilterBtn.addEventListener("click", () => {
     state.hideBigShopItems = !state.hideBigShopItems;
     localStorage.setItem(HIDE_BIG_SHOP_FILTER_KEY, String(state.hideBigShopItems));
@@ -195,6 +251,26 @@ function bindEvents() {
   el.addFavouritesBtn.addEventListener("click", () => {
     addFavouritesToList();
     showInfoToast("Added favourite items");
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  });
+  el.addModeItemBtn.addEventListener("click", () => setAddMode("item"));
+  el.addModeMealBtn.addEventListener("click", () => setAddMode("meal"));
+  el.addMealFilter.addEventListener("input", () => {
+    state.mealPickerQuery = el.addMealFilter.value.trim();
+    renderAddMealSuggestions();
+  });
+  el.addMealFilter.addEventListener("focus", renderAddMealSuggestions);
+  el.addMealFilter.addEventListener("keydown", onAddMealSuggestionKeyDown);
+  el.addMealFilter.addEventListener("blur", () => {
+    setTimeout(hideAddMealSuggestions, 120);
+  });
+  el.addSelectedMealBtn.addEventListener("click", async () => {
+    if (!state.selectedAddMealId) return;
+    await addMealToList(state.selectedAddMealId);
+  });
+  el.manageMealsBtn.addEventListener("click", () => {
+    openMealEditor();
     el.optionsMenu.hidden = true;
     document.body.classList.remove("options-menu-open");
   });
@@ -214,6 +290,60 @@ function bindEvents() {
   });
 
   el.closeCheckedBtn.addEventListener("click", closeCheckedModal);
+  el.closeMealPickerBtn.addEventListener("click", closeMealPicker);
+  el.closeMealEditorBtn.addEventListener("click", closeMealEditor);
+  el.mealPickerFilter.addEventListener("input", () => {
+    state.mealPickerQuery = el.mealPickerFilter.value.trim();
+    renderMealPicker();
+  });
+  el.mealEditorForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    await saveNewMealFromEditor();
+  });
+  el.openAddMealPopupBtn.addEventListener("click", () => {
+    openAddMealPopup();
+  });
+  el.closeAddMealPopupBtn.addEventListener("click", () => {
+    closeAddMealPopup();
+  });
+  el.mealItemAddBtn.addEventListener("click", () => {
+    addMealDraftItemFromInput();
+  });
+  el.mealItemEntry.addEventListener("input", () => {
+    const q = el.mealItemEntry.value.trim().toLowerCase();
+    const guessed = guessSection(q);
+    if (guessed) el.mealItemSection.value = guessed;
+    renderMealItemSuggestions();
+  });
+  el.mealItemEntry.addEventListener("keydown", onMealSuggestionKeyDown);
+  el.mealItemEntry.addEventListener("focus", renderMealItemSuggestions);
+  el.mealItemEntry.addEventListener("blur", () => {
+    setTimeout(hideMealItemSuggestions, 120);
+  });
+  el.mealEditForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    await saveEditedMeal();
+  });
+  el.mealEditDeleteBtn.addEventListener("click", async () => {
+    await deleteEditedMeal();
+  });
+  el.mealEditItemAddBtn.addEventListener("click", () => {
+    addMealEditDraftItemFromInput();
+  });
+  el.mealEditItemEntry.addEventListener("input", () => {
+    const q = el.mealEditItemEntry.value.trim().toLowerCase();
+    const guessed = guessSection(q);
+    if (guessed) el.mealEditItemSection.value = guessed;
+    renderMealEditItemSuggestions();
+  });
+  el.mealEditItemEntry.addEventListener("keydown", onMealEditSuggestionKeyDown);
+  el.mealEditItemEntry.addEventListener("focus", renderMealEditItemSuggestions);
+  el.mealEditItemEntry.addEventListener("blur", () => {
+    setTimeout(hideMealEditItemSuggestions, 120);
+  });
+  el.mealEditCancelBtn.addEventListener("click", () => {
+    closeMealEditPopup();
+  });
   if (el.checkedFilterInput) {
     el.checkedFilterInput.addEventListener("input", () => {
       state.dbFilterQuery = el.checkedFilterInput.value.trim();
@@ -599,6 +729,719 @@ function closeCheckedModal() {
   el.showCheckedBtn.textContent = "Show Item Database";
 }
 
+function setAddMode(mode) {
+  state.addMode = mode === "meal" ? "meal" : "item";
+  const itemMode = state.addMode === "item";
+  el.addModeItemBtn.classList.toggle("is-active", itemMode);
+  el.addModeMealBtn.classList.toggle("is-active", !itemMode);
+  el.addItemPane.hidden = !itemMode;
+  el.addMealPane.hidden = itemMode;
+  if (!itemMode) {
+    state.mealPickerQuery = "";
+    el.addMealFilter.value = "";
+    state.selectedAddMealId = null;
+    renderAddMealSuggestions();
+  }
+}
+
+function renderAddMealSuggestions() {
+  const q = state.mealPickerQuery.toLowerCase();
+  const meals = [...state.meals]
+    .filter((m) => !q || (m.name || "").toLowerCase().includes(q))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  el.addMealOptions.innerHTML = "";
+  if (!meals.length) {
+    state.selectedAddMealId = null;
+    el.addSelectedMealBtn.disabled = true;
+    el.addSelectedMealBtn.textContent = "Add meal items to list";
+    hideAddMealSuggestions();
+    return;
+  }
+
+  const visibleMeals = meals.slice(0, 12);
+  addMealSuggestionActiveIndex = -1;
+  el.addMealOptions.innerHTML = visibleMeals
+    .map((meal) => `<button class="item-option-btn${state.selectedAddMealId === meal.id ? " is-active" : ""}" type="button" data-id="${escapeHtml(meal.id)}"><span>${escapeHtml(meal.name)}</span></button>`)
+    .join("");
+  el.addMealOptions.hidden = false;
+  for (const btn of el.addMealOptions.querySelectorAll(".item-option-btn")) {
+    btn.addEventListener("click", () => {
+      const mealId = btn.getAttribute("data-id") || "";
+      state.selectedAddMealId = mealId;
+      const meal = state.meals.find((m) => m.id === mealId);
+      if (meal?.name) el.addMealFilter.value = meal.name;
+      hideAddMealSuggestions();
+      updateAddMealSubmitButton();
+    });
+  }
+
+  if (state.selectedAddMealId && !visibleMeals.some((m) => m.id === state.selectedAddMealId) && !meals.some((m) => m.id === state.selectedAddMealId)) {
+    state.selectedAddMealId = null;
+  }
+  syncAddMealSuggestionActiveState();
+  updateAddMealSubmitButton();
+}
+
+function hideAddMealSuggestions() {
+  addMealSuggestionActiveIndex = -1;
+  el.addMealOptions.innerHTML = "";
+  el.addMealOptions.hidden = true;
+}
+
+function onAddMealSuggestionKeyDown(ev) {
+  if (ev.key === "Enter" && el.addMealOptions.hidden) {
+    ev.preventDefault();
+    if (state.selectedAddMealId) el.addSelectedMealBtn.click();
+    return;
+  }
+
+  const options = [...el.addMealOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+
+  if (ev.key === "ArrowDown") {
+    ev.preventDefault();
+    addMealSuggestionActiveIndex = Math.min(options.length - 1, addMealSuggestionActiveIndex + 1);
+    syncAddMealSuggestionActiveState();
+    return;
+  }
+
+  if (ev.key === "ArrowUp") {
+    ev.preventDefault();
+    addMealSuggestionActiveIndex = Math.max(0, addMealSuggestionActiveIndex - 1);
+    syncAddMealSuggestionActiveState();
+    return;
+  }
+
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    if (addMealSuggestionActiveIndex >= 0 && options[addMealSuggestionActiveIndex]) {
+      options[addMealSuggestionActiveIndex].click();
+      return;
+    }
+    if (state.selectedAddMealId) el.addSelectedMealBtn.click();
+    return;
+  }
+
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    hideAddMealSuggestions();
+  }
+}
+
+function syncAddMealSuggestionActiveState() {
+  const options = [...el.addMealOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+  options.forEach((btn, idx) => {
+    btn.classList.toggle("is-active", idx === addMealSuggestionActiveIndex);
+  });
+  const active = options[addMealSuggestionActiveIndex];
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function updateAddMealSubmitButton() {
+  const selectedMeal = state.meals.find((m) => m.id === state.selectedAddMealId);
+  el.addSelectedMealBtn.disabled = !selectedMeal;
+  el.addSelectedMealBtn.textContent = "Add meal items to list";
+}
+
+function openMealPicker() {
+  el.mealPickerModal.classList.add("is-open");
+  el.appShell.classList.add("modal-focus");
+  state.mealPickerQuery = "";
+  el.mealPickerFilter.value = "";
+  renderMealPicker();
+}
+
+function closeMealPicker() {
+  el.mealPickerModal.classList.remove("is-open");
+  el.appShell.classList.remove("modal-focus");
+}
+
+function openMealEditor() {
+  el.mealEditorModal.classList.add("is-open");
+  el.appShell.classList.add("modal-focus");
+  state.mealDraftItems = [];
+  el.mealNameInput.value = "";
+  el.mealItemEntry.value = "";
+  el.mealItemSection.value = SECTIONS[0];
+  hideMealItemSuggestions();
+  renderMealEditorList();
+  renderMealDraftItems();
+  closeAddMealPopup();
+  closeMealEditPopup();
+}
+
+function closeMealEditor() {
+  el.mealEditorModal.classList.remove("is-open");
+  el.appShell.classList.remove("modal-focus");
+  closeAddMealPopup();
+}
+
+function openAddMealPopup() {
+  state.mealDraftItems = [];
+  el.mealNameInput.value = "";
+  el.mealItemEntry.value = "";
+  el.mealItemSection.value = SECTIONS[0];
+  hideMealItemSuggestions();
+  renderMealDraftItems();
+  el.addMealPopup.hidden = false;
+  requestAnimationFrame(() => el.mealNameInput.focus());
+}
+
+function closeAddMealPopup() {
+  state.mealDraftItems = [];
+  hideMealItemSuggestions();
+  el.addMealPopup.hidden = true;
+}
+
+function renderMealPicker() {
+  const q = state.mealPickerQuery.toLowerCase();
+  const meals = [...state.meals]
+    .filter((m) => !q || (m.name || "").toLowerCase().includes(q))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  el.mealPickerList.innerHTML = "";
+  if (!meals.length) {
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.textContent = "No meals yet. Create one in Manage Meals.";
+    el.mealPickerList.appendChild(li);
+    return;
+  }
+
+  for (const meal of meals) {
+    const li = document.createElement("li");
+    li.className = "item-row";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "item-main-btn";
+    const count = state.mealItems.filter((i) => i.meal_id === meal.id).length;
+    btn.innerHTML = `<span class="item-name-text">${escapeHtml(meal.name)}</span><span class="item-qty">${count} items</span>`;
+    btn.addEventListener("click", async () => {
+      await addMealToList(meal.id);
+      closeMealPicker();
+    });
+    li.appendChild(btn);
+    el.mealPickerList.appendChild(li);
+  }
+}
+
+function renderMealEditorList() {
+  const meals = [...state.meals].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  el.mealEditorList.innerHTML = "";
+  if (!meals.length) {
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.textContent = "No meals yet.";
+    el.mealEditorList.appendChild(li);
+    return;
+  }
+
+  for (const meal of meals) {
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.innerHTML = `
+      <div>
+        <span class="item-name">${escapeHtml(meal.name)}</span>
+      </div>
+      <button class="icon-btn" type="button">Edit</button>
+    `;
+    const editBtn = li.querySelector("button");
+    editBtn.addEventListener("click", () => openMealEditPopup(meal.id));
+    el.mealEditorList.appendChild(li);
+  }
+}
+
+function openMealEditPopup(mealId) {
+  state.editingMealId = mealId;
+  const meal = state.meals.find((m) => m.id === mealId);
+  if (!meal) return;
+  el.mealEditNameInput.value = meal.name || "";
+  state.mealEditDraftItems = state.mealItems
+    .filter((x) => x.meal_id === mealId)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map((x) => ({
+      name: x.name,
+      section: normalizeSection(x.section) || guessSection((x.name || "").toLowerCase()) || SECTIONS[0]
+    }));
+  renderMealEditDraftItems();
+  el.mealEditItemEntry.value = "";
+  el.mealEditItemSection.value = SECTIONS[0];
+  hideMealEditItemSuggestions();
+  el.mealEditPopup.hidden = false;
+}
+
+function closeMealEditPopup() {
+  state.editingMealId = null;
+  state.mealEditDraftItems = [];
+  el.mealEditPopup.hidden = true;
+}
+
+function renderMealEditDraftItems() {
+  el.mealEditDraftList.innerHTML = "";
+  if (!state.mealEditDraftItems.length) {
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.textContent = "No items yet. Add one above.";
+    el.mealEditDraftList.appendChild(li);
+    return;
+  }
+  for (let i = 0; i < state.mealEditDraftItems.length; i += 1) {
+    const draft = state.mealEditDraftItems[i];
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.innerHTML = `
+      <div>
+        <span class="item-name">${escapeHtml(draft.name)}</span>
+        <div class="item-qty">${escapeHtml(draft.section || "")}</div>
+      </div>
+      <button class="db-icon-btn db-delete-btn" type="button" aria-label="Remove meal item">🗑</button>
+    `;
+    li.querySelector("button").addEventListener("click", () => {
+      state.mealEditDraftItems.splice(i, 1);
+      renderMealEditDraftItems();
+    });
+    el.mealEditDraftList.appendChild(li);
+  }
+}
+
+function addMealEditDraftItemFromInput() {
+  const name = normalizeItemName(el.mealEditItemEntry.value);
+  if (!name) return;
+  const key = canonicalNameKey(name);
+  if (!key) return;
+  if (state.mealEditDraftItems.some((x) => canonicalNameKey(x.name) === key)) {
+    showInfoToast(`${name} already in meal`);
+    return;
+  }
+  const section = normalizeSection(el.mealEditItemSection.value)
+    || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
+    || guessSection(name.toLowerCase())
+    || SECTIONS[0];
+  state.mealEditDraftItems.push({ name, section });
+  renderMealEditDraftItems();
+  el.mealEditItemEntry.value = "";
+  el.mealEditItemSection.value = section;
+  hideMealEditItemSuggestions();
+  el.mealEditItemEntry.focus();
+}
+
+function renderMealEditItemSuggestions() {
+  const q = el.mealEditItemEntry.value.trim().toLowerCase();
+  if (q.length < 2) return hideMealEditItemSuggestions();
+  const byKey = new Map();
+  for (const s of state.suggestionIndex) {
+    const key = canonicalNameKey(s.name);
+    if (!key || byKey.has(key)) continue;
+    byKey.set(key, s.name);
+  }
+  const matches = [...byKey.values()].filter((name) => name.toLowerCase().includes(q)).slice(0, 8);
+  if (!matches.length) return hideMealEditItemSuggestions();
+  mealEditSuggestionActiveIndex = -1;
+  el.mealEditItemOptions.innerHTML = matches
+    .map((name) => `<button class="item-option-btn" type="button" data-value="${escapeHtml(name)}"><span>${escapeHtml(name)}</span></button>`)
+    .join("");
+  el.mealEditItemOptions.hidden = false;
+  for (const btn of el.mealEditItemOptions.querySelectorAll(".item-option-btn")) {
+    btn.addEventListener("click", () => {
+      const value = btn.getAttribute("data-value") || "";
+      el.mealEditItemEntry.value = value;
+      const key = canonicalNameKey(value);
+      const section = normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
+        || guessSection(value.toLowerCase())
+        || SECTIONS[0];
+      el.mealEditItemSection.value = section;
+      hideMealEditItemSuggestions();
+      el.mealEditItemEntry.focus();
+    });
+  }
+  syncMealEditSuggestionActiveState();
+}
+
+function hideMealEditItemSuggestions() {
+  mealEditSuggestionActiveIndex = -1;
+  el.mealEditItemOptions.innerHTML = "";
+  el.mealEditItemOptions.hidden = true;
+}
+
+function onMealEditSuggestionKeyDown(ev) {
+  if (el.mealEditItemOptions.hidden) {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      addMealEditDraftItemFromInput();
+    }
+    return;
+  }
+  const options = [...el.mealEditItemOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+  if (ev.key === "ArrowDown") {
+    ev.preventDefault();
+    mealEditSuggestionActiveIndex = Math.min(options.length - 1, mealEditSuggestionActiveIndex + 1);
+    return syncMealEditSuggestionActiveState();
+  }
+  if (ev.key === "ArrowUp") {
+    ev.preventDefault();
+    mealEditSuggestionActiveIndex = Math.max(0, mealEditSuggestionActiveIndex - 1);
+    return syncMealEditSuggestionActiveState();
+  }
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    if (mealEditSuggestionActiveIndex >= 0 && options[mealEditSuggestionActiveIndex]) return options[mealEditSuggestionActiveIndex].click();
+    return addMealEditDraftItemFromInput();
+  }
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    hideMealEditItemSuggestions();
+  }
+}
+
+function syncMealEditSuggestionActiveState() {
+  const options = [...el.mealEditItemOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+  options.forEach((btn, idx) => btn.classList.toggle("is-active", idx === mealEditSuggestionActiveIndex));
+  const active = options[mealEditSuggestionActiveIndex];
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function renderMealDraftItems() {
+  el.mealDraftList.innerHTML = "";
+  if (!state.mealDraftItems.length) {
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.textContent = "No items yet. Add one above.";
+    el.mealDraftList.appendChild(li);
+    return;
+  }
+
+  for (let i = 0; i < state.mealDraftItems.length; i += 1) {
+    const draft = state.mealDraftItems[i];
+    const li = document.createElement("li");
+    li.className = "item-row";
+    li.innerHTML = `
+      <div>
+        <span class="item-name">${escapeHtml(draft.name)}</span>
+        <div class="item-qty">${escapeHtml(draft.section || "")}</div>
+      </div>
+      <button class="db-icon-btn db-delete-btn" type="button" aria-label="Remove meal item">🗑</button>
+    `;
+    const removeBtn = li.querySelector("button");
+    removeBtn.addEventListener("click", () => {
+      state.mealDraftItems.splice(i, 1);
+      renderMealDraftItems();
+    });
+    el.mealDraftList.appendChild(li);
+  }
+}
+
+function addMealDraftItemFromInput() {
+  const name = normalizeItemName(el.mealItemEntry.value);
+  if (!name) return;
+  const key = canonicalNameKey(name);
+  if (!key) return;
+  if (state.mealDraftItems.some((x) => canonicalNameKey(x.name) === key)) {
+    showInfoToast(`${name} already in meal`);
+    return;
+  }
+
+  const section = normalizeSection(el.mealItemSection.value)
+    || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
+    || guessSection(name.toLowerCase())
+    || SECTIONS[0];
+  state.mealDraftItems.push({ name, section });
+  renderMealDraftItems();
+  el.mealItemEntry.value = "";
+  el.mealItemSection.value = section;
+  hideMealItemSuggestions();
+  el.mealItemEntry.focus();
+}
+
+function renderMealItemSuggestions() {
+  const q = el.mealItemEntry.value.trim().toLowerCase();
+  if (q.length < 2) {
+    hideMealItemSuggestions();
+    return;
+  }
+
+  const byKey = new Map();
+  for (const s of state.suggestionIndex) {
+    const key = canonicalNameKey(s.name);
+    if (!key || byKey.has(key)) continue;
+    byKey.set(key, s.name);
+  }
+  const matches = [...byKey.values()]
+    .filter((name) => name.toLowerCase().includes(q))
+    .slice(0, 8);
+  if (!matches.length) {
+    hideMealItemSuggestions();
+    return;
+  }
+
+  mealSuggestionActiveIndex = -1;
+  el.mealItemOptions.innerHTML = matches
+    .map((name) => `<button class="item-option-btn" type="button" data-value="${escapeHtml(name)}"><span>${escapeHtml(name)}</span></button>`)
+    .join("");
+  el.mealItemOptions.hidden = false;
+  for (const btn of el.mealItemOptions.querySelectorAll(".item-option-btn")) {
+    btn.addEventListener("click", () => {
+      const value = btn.getAttribute("data-value") || "";
+      el.mealItemEntry.value = value;
+      const key = canonicalNameKey(value);
+      const section = normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
+        || guessSection(value.toLowerCase())
+        || SECTIONS[0];
+      el.mealItemSection.value = section;
+      hideMealItemSuggestions();
+      el.mealItemEntry.focus();
+    });
+  }
+  syncMealSuggestionActiveState();
+}
+
+function hideMealItemSuggestions() {
+  mealSuggestionActiveIndex = -1;
+  el.mealItemOptions.innerHTML = "";
+  el.mealItemOptions.hidden = true;
+}
+
+function onMealSuggestionKeyDown(ev) {
+  if (el.mealItemOptions.hidden) {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      addMealDraftItemFromInput();
+    }
+    return;
+  }
+
+  const options = [...el.mealItemOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+
+  if (ev.key === "ArrowDown") {
+    ev.preventDefault();
+    mealSuggestionActiveIndex = Math.min(options.length - 1, mealSuggestionActiveIndex + 1);
+    syncMealSuggestionActiveState();
+    return;
+  }
+
+  if (ev.key === "ArrowUp") {
+    ev.preventDefault();
+    mealSuggestionActiveIndex = Math.max(0, mealSuggestionActiveIndex - 1);
+    syncMealSuggestionActiveState();
+    return;
+  }
+
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    if (mealSuggestionActiveIndex >= 0 && options[mealSuggestionActiveIndex]) {
+      options[mealSuggestionActiveIndex].click();
+      return;
+    }
+    addMealDraftItemFromInput();
+    return;
+  }
+
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    hideMealItemSuggestions();
+  }
+}
+
+function syncMealSuggestionActiveState() {
+  const options = [...el.mealItemOptions.querySelectorAll(".item-option-btn")];
+  if (!options.length) return;
+  options.forEach((btn, idx) => {
+    btn.classList.toggle("is-active", idx === mealSuggestionActiveIndex);
+  });
+  const active = options[mealSuggestionActiveIndex];
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+async function saveNewMealFromEditor() {
+  const name = normalizeItemName(el.mealNameInput.value);
+  if (!name) {
+    showInfoToast("Enter a meal name");
+    return;
+  }
+
+  if (!state.mealDraftItems.length) {
+    showInfoToast("Add at least one meal item");
+    return;
+  }
+
+  const existing = state.meals.find((m) => canonicalNameKey(m.name) === canonicalNameKey(name));
+  if (existing) {
+    showInfoToast("A meal with that name already exists");
+    return;
+  }
+
+  const meal = {
+    id: crypto.randomUUID(),
+    household_id: APP_CONFIG.householdId,
+    name,
+    updated_at: new Date().toISOString()
+  };
+  state.meals.push(meal);
+
+  const dedupedDraftItems = [];
+  const seenDraftKeys = new Set();
+  for (const draftItem of state.mealDraftItems) {
+    const key = canonicalNameKey(draftItem.name);
+    if (!key || seenDraftKeys.has(key)) continue;
+    seenDraftKeys.add(key);
+    dedupedDraftItems.push(draftItem);
+  }
+
+  const newMealItems = dedupedDraftItems.map((draftItem, idx) => {
+    const itemName = normalizeItemName(draftItem.name);
+    const existingItem = state.mealItems.find((x) => x.meal_id === meal.id && canonicalNameKey(x.name) === canonicalNameKey(itemName));
+    return {
+      id: existingItem?.id || crypto.randomUUID(),
+      meal_id: meal.id,
+      household_id: APP_CONFIG.householdId,
+      name: itemName,
+      section: normalizeSection(draftItem.section)
+        || state.suggestions.find((s) => canonicalNameKey(s.name) === canonicalNameKey(itemName))?.section
+        || "",
+      sort_order: idx,
+      updated_at: new Date().toISOString()
+    };
+  });
+
+  await replaceMealItems(meal.id, newMealItems);
+  await enqueue("upsert", meal, "meals");
+  await persistLocal();
+  renderMealEditorList();
+  state.mealDraftItems = [];
+  el.mealNameInput.value = "";
+  renderMealDraftItems();
+  closeAddMealPopup();
+  showInfoToast("Meal saved");
+  syncNow();
+}
+
+async function saveEditedMeal() {
+  const meal = state.meals.find((m) => m.id === state.editingMealId);
+  if (!meal) return;
+  const nextName = normalizeItemName(el.mealEditNameInput.value);
+  if (!nextName) {
+    showInfoToast("Enter a meal name");
+    return;
+  }
+  const lines = state.mealEditDraftItems
+    .map((x) => normalizeItemName(x.name))
+    .filter(Boolean);
+  if (!lines.length) {
+    showInfoToast("Add at least one meal item");
+    return;
+  }
+  const dupName = state.meals.find((m) => m.id !== meal.id && canonicalNameKey(m.name) === canonicalNameKey(nextName));
+  if (dupName) {
+    showInfoToast("A meal with that name already exists");
+    return;
+  }
+
+  meal.name = nextName;
+  meal.updated_at = new Date().toISOString();
+  const seenLineKeys = new Set();
+  const uniqueLines = lines.filter((x) => {
+    const key = canonicalNameKey(x);
+    if (!key || seenLineKeys.has(key)) return false;
+    seenLineKeys.add(key);
+    return true;
+  });
+  const newMealItems = uniqueLines.map((itemName, idx) => ({
+    id: state.mealItems.find((x) => x.meal_id === meal.id && canonicalNameKey(x.name) === canonicalNameKey(itemName))?.id || crypto.randomUUID(),
+    meal_id: meal.id,
+    household_id: APP_CONFIG.householdId,
+    name: itemName,
+    section: normalizeSection(state.mealEditDraftItems.find((x) => canonicalNameKey(x.name) === canonicalNameKey(itemName))?.section || "")
+      || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === canonicalNameKey(itemName))?.section || "")
+      || "",
+    sort_order: idx,
+    updated_at: new Date().toISOString()
+  }));
+  await replaceMealItems(meal.id, newMealItems);
+  await enqueue("upsert", meal, "meals");
+  await persistLocal();
+  closeMealEditPopup();
+  renderMealEditorList();
+  showInfoToast("Meal updated");
+  syncNow();
+}
+
+async function deleteEditedMeal() {
+  const meal = state.meals.find((m) => m.id === state.editingMealId);
+  if (!meal) return;
+  const ok = window.confirm(`Delete meal "${meal.name}"?`);
+  if (!ok) return;
+
+  state.meals = state.meals.filter((m) => m.id !== meal.id);
+  const removedItems = state.mealItems.filter((x) => x.meal_id === meal.id);
+  state.mealItems = state.mealItems.filter((x) => x.meal_id !== meal.id);
+  await persistLocal();
+  await apiDelete("meals", { eq: { id: meal.id } });
+  for (const item of removedItems) {
+    await apiDelete("meal_items", { eq: { id: item.id } });
+  }
+  closeMealEditPopup();
+  renderMealEditorList();
+  showInfoToast("Meal deleted");
+}
+
+async function replaceMealItems(mealId, nextItems) {
+  const existing = state.mealItems.filter((x) => x.meal_id === mealId);
+  state.mealItems = state.mealItems.filter((x) => x.meal_id !== mealId).concat(nextItems);
+  for (const item of nextItems) {
+    await enqueue("upsert", item, "meal_items");
+  }
+  for (const removed of existing) {
+    if (nextItems.some((x) => x.id === removed.id)) continue;
+    await apiDelete("meal_items", { eq: { id: removed.id } });
+  }
+}
+
+async function addMealToList(mealId) {
+  const meal = state.meals.find((m) => m.id === mealId);
+  if (!meal) return;
+  const mealItems = state.mealItems
+    .filter((x) => x.meal_id === mealId)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const active = getActiveUncheckedNameKeys();
+  let added = 0;
+  let skipped = 0;
+
+  for (const mealItem of mealItems) {
+    const name = normalizeItemName(mealItem.name);
+    const key = canonicalNameKey(name);
+    if (!name || !key) continue;
+    if (active.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    const section = normalizeSection(mealItem.section)
+      || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === key)?.section)
+      || guessSection(name.toLowerCase())
+      || SECTIONS[0];
+    const item = {
+      id: crypto.randomUUID(),
+      household_id: APP_CONFIG.householdId,
+      name,
+      section,
+      quantity_text: "",
+      checked: false,
+      deleted_at: null,
+      updated_at: new Date().toISOString()
+    };
+    state.items.push(item);
+    active.add(key);
+    added += 1;
+    await enqueue("upsert", item);
+    await upsertSuggestion(name, section);
+  }
+
+  render();
+  syncNow();
+  showInfoToast(`Added ${added} from ${meal.name}${skipped ? `, skipped ${skipped}` : ""}`);
+}
+
 function renderSuggestions() {
   const q = el.itemName.value.trim().toLowerCase();
   applySectionGuess(q);
@@ -743,8 +1586,14 @@ function renderSyncBar() {
   el.syncBar.className = `sync-bar ${warning ? "sync-conflict" : "sync-online"}`;
   el.syncText.textContent = warning ? "Sync warning" : state.syncing ? "Checking..." : "Online";
 
-  if (warning || pendingCount > 0) {
-    el.syncMeta.textContent = `${pendingCount} items will sync once you have connectivity`;
+  if (warning && pendingCount > 0) {
+    el.syncMeta.textContent = `${pendingCount} updates will sync once connectivity is restored`;
+  } else if (warning) {
+    el.syncMeta.textContent = state.lastSyncError || "Sync warning";
+  } else if (pendingCount > 0) {
+    el.syncMeta.textContent = state.syncing
+      ? `Syncing ${pendingCount} pending updates...`
+      : `${pendingCount} pending updates`;
   } else if (state.lastSyncAt) {
     const t = new Date(state.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     el.syncMeta.textContent = `Last update: ${t}`;
@@ -761,6 +1610,16 @@ function setAddCardCollapsed(collapsed) {
   el.addFabBtn.setAttribute("aria-label", collapsed ? "Show add new item panel" : "Hide add new item panel");
   el.addFabBtn.hidden = false;
   localStorage.setItem(ADD_CARD_COLLAPSED_KEY, String(collapsed));
+  if (!collapsed) {
+    // Focus after panel becomes visible so typing can start immediately.
+    requestAnimationFrame(() => {
+      if (state.addMode === "item") {
+        el.itemName.focus();
+      } else {
+        el.addMealFilter.focus();
+      }
+    });
+  }
 }
 
 function captureUndo(type, payload) {
@@ -1000,13 +1859,16 @@ async function syncNow() {
   renderSyncBar();
 
   while (state.pending.length) {
-    const op = state.pending[0];
-    const { error } = await apiUpsert("shopping_items", op.payload);
+    const opIndex = findNextPendingIndex();
+    const op = state.pending[opIndex];
+    const table = inferPendingTable(op);
+    op.table = table;
+    const { error } = await apiUpsert(table, op.payload);
     if (error) {
       state.lastSyncError = `sync failed: ${error.message}`;
       break;
     }
-    state.pending.shift();
+    state.pending.splice(opIndex, 1);
     await persistLocal();
   }
 
@@ -1027,10 +1889,41 @@ async function syncNow() {
     state.items = merged;
   }
 
-  if (!error) await syncSuggestionsFromRemote();
+  if (!error) {
+    await syncSuggestionsFromRemote();
+    await syncMealsFromRemote();
+  }
 
   state.syncing = false;
   render();
+}
+
+function findNextPendingIndex() {
+  if (!state.pending.length) return 0;
+  // Flush parent meal rows first so meal_items FK inserts do not block queue.
+  const mealsIdx = state.pending.findIndex((op) => inferPendingTable(op) === "meals");
+  if (mealsIdx >= 0) return mealsIdx;
+  const nonMealItemsIdx = state.pending.findIndex((op) => inferPendingTable(op) !== "meal_items");
+  if (nonMealItemsIdx >= 0) return nonMealItemsIdx;
+  return 0;
+}
+
+function inferPendingTable(op) {
+  const payload = op?.payload || {};
+  if (op?.table === "shopping_items" || op?.table === "suggestion_items" || op?.table === "meals" || op?.table === "meal_items") {
+    // Guard against old malformed queued ops that were written to shopping_items.
+    if (op.table === "shopping_items" && payload?.meal_id) return "meal_items";
+    if (op.table === "shopping_items" && payload?.checked === undefined && payload?.meal_id === undefined && payload?.name && payload?.updated_at) {
+      return "meals";
+    }
+    return op.table;
+  }
+
+  if (payload?.meal_id) return "meal_items";
+  if (payload?.checked !== undefined || payload?.deleted_at !== undefined || payload?.quantity_text !== undefined) return "shopping_items";
+  if (payload?.favourite !== undefined || payload?.big_shop !== undefined || payload?.use_count !== undefined) return "suggestion_items";
+  if (payload?.name && payload?.household_id) return "meals";
+  return "shopping_items";
 }
 
 function detectConflicts(localItems, mergedItems) {
@@ -1083,8 +1976,8 @@ function describeRemoteResolution(local, remote) {
   };
 }
 
-async function enqueue(type, payload) {
-  state.pending.push({ type, payload });
+async function enqueue(type, payload, table = "shopping_items") {
+  state.pending.push({ type, payload, table });
   await persistLocal();
 }
 
@@ -1336,6 +2229,25 @@ async function addFavouritesToList() {
   }
 }
 
+async function checkAllActiveItems() {
+  const activeItems = state.items.filter((i) => !i.deleted_at && !i.checked);
+  if (!activeItems.length) {
+    showInfoToast("No active items to check");
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  for (const item of activeItems) {
+    item.checked = true;
+    item.updated_at = nowIso;
+    await enqueue("upsert", item);
+  }
+
+  render();
+  syncNow();
+  showInfoToast(`Checked ${activeItems.length} items`);
+}
+
 async function syncSuggestionsFromRemote() {
   if (!supabase) return;
   const { data, error } = await apiSelect("suggestion_items", {
@@ -1378,6 +2290,45 @@ async function syncSuggestionsFromRemote() {
     rebuildSuggestionIndex();
     await persistLocal();
   }
+}
+
+async function syncMealsFromRemote() {
+  if (!supabase) return;
+  const { data: mealRows, error: mealError } = await apiSelect("meals", {
+    columns: "*",
+    eq: { household_id: APP_CONFIG.householdId }
+  });
+  if (mealError || !mealRows) return;
+
+  const { data: mealItemRows, error: itemError } = await apiSelect("meal_items", {
+    columns: "*",
+    eq: { household_id: APP_CONFIG.householdId }
+  });
+  if (itemError || !mealItemRows) return;
+
+  const remoteMeals = mealRows.map((m) => ({
+    id: m.id,
+    household_id: m.household_id,
+    name: normalizeItemName(m.name),
+    updated_at: m.updated_at || new Date().toISOString()
+  }));
+  const remoteMealItems = mealItemRows.map((x) => ({
+    id: x.id,
+    meal_id: x.meal_id,
+    household_id: x.household_id,
+    name: normalizeItemName(x.name),
+    section: x.section || "",
+    sort_order: x.sort_order || 0,
+    updated_at: x.updated_at || new Date().toISOString()
+  }));
+
+  // Merge remote onto local so unsynced local edits are not dropped from UI.
+  state.meals = mergeById(state.meals, remoteMeals);
+  state.mealItems = mergeById(state.mealItems, remoteMealItems);
+  await persistLocal();
+  renderMealPicker();
+  renderAddMealSuggestions();
+  renderMealEditorList();
 }
 
 async function upsertSuggestionRemote(suggestion) {
@@ -1468,6 +2419,8 @@ async function loadLocal() {
   state.items = (await idbGet(db, "state", "items")) || [];
   state.suggestions = (await idbGet(db, "state", "suggestions")) || [];
   state.pending = (await idbGet(db, "state", "pending")) || [];
+  state.meals = (await idbGet(db, "state", "meals")) || [];
+  state.mealItems = (await idbGet(db, "state", "mealItems")) || [];
   rebuildSuggestionIndex();
 }
 
@@ -1476,6 +2429,8 @@ async function persistLocal() {
   await idbSet(db, "state", "items", state.items);
   await idbSet(db, "state", "suggestions", state.suggestions);
   await idbSet(db, "state", "pending", state.pending);
+  await idbSet(db, "state", "meals", state.meals);
+  await idbSet(db, "state", "mealItems", state.mealItems);
 }
 
 async function apiUpsert(table, payload) {
