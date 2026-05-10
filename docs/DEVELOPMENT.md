@@ -28,5 +28,10 @@
 - Do not reintroduce runtime CDN dependency for core app logic
 
 ## Release Rule (Mandatory)
-- On every app change, always bump `CACHE_VERSION` in `/sw.js`.
+- On every app change, always bump both:
+  - `CACHE_VERSION` in `/sw.js`
+  - `APP_VERSION` in `/app/app.js`
+- Keep the version numbers aligned (for example, `msl-shell-v87` with `APP_VERSION = "v87"`).
 - Do this automatically as part of the change set; do not ask for confirmation.
+- This applies to any user-visible or behavior change in `index.html`, `app/app.js`, `app/styles.css`, `manifest.webmanifest`, or app icons.
+- PRs/commits are incomplete if this bump is missing.

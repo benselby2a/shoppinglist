@@ -389,6 +389,11 @@ body.options-menu-open::before {
   opacity: 1;
   box-shadow: 0 0 0 2px rgb(132 187 222 / 0.35);
 }
+.db-edit-btn {
+  color: #0f5d50;
+  background: #e9fbf7;
+  border-color: #a8e7d8;
+}
 .db-delete-btn {
   color: #b5423c;
   background: #fff0ec;
@@ -434,7 +439,7 @@ body.options-menu-open::before {
 .footer-actions { display: none; }
 .footer-actions button, .file-btn { flex: 1; text-align: center; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
 .file-btn input { display: none; }
-.modal { position: fixed; inset: 0; z-index: 1000; background: rgb(0 0 0 / 0.45); display: none; justify-content: center; align-items: center; }
+.modal { position: fixed; inset: 0; z-index: 1400; background: rgb(0 0 0 / 0.45); display: none; justify-content: center; align-items: center; }
 .modal.is-open { display: flex; }
 .modal-content { width: min(680px, 92vw); max-height: 80vh; overflow: auto; background: var(--surface); border-radius: 12px; padding: 14px; }
 .modal-header {
@@ -459,6 +464,27 @@ body.options-menu-open::before {
   padding: 16px 16px 12px;
   z-index: 5;
 }
+.db-filter-wrap {
+  position: sticky;
+  top: 68px;
+  z-index: 4;
+  padding: 8px 16px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid #ece6da;
+}
+#checked-filter-input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+#checked-filter-input:focus-visible {
+  outline: 2px solid #1f6f5f;
+  outline-offset: 2px;
+}
 #checked-modal .modal-header h2 {
   margin: 0;
   font-size: 1.25rem;
@@ -477,6 +503,46 @@ body.options-menu-open::before {
 #checked-modal .item-name {
   font-size: 1.15rem;
 }
+#checked-modal .item-row {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+#checked-modal .db-row-card {
+  border: 1px solid #e8e2d6;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+#checked-modal .db-row-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  text-align: left;
+}
+#checked-modal .db-row-chevron {
+  color: var(--muted);
+  font-size: 1rem;
+}
+#checked-modal .db-row-details {
+  border-top: 1px solid #ece6da;
+  background: #fcfbf7;
+  padding: 10px;
+  display: grid;
+  gap: 12px;
+}
+#checked-modal .db-row-details[hidden] {
+  display: none !important;
+}
+#checked-modal .db-empty-row {
+  color: var(--muted);
+  border-top: 0;
+  padding: 12px 2px;
+}
 #checked-modal .db-section-row label,
 #checked-modal .db-section-select {
   font-size: 0.95rem;
@@ -485,6 +551,10 @@ body.options-menu-open::before {
   width: 40px;
   height: 40px;
   font-size: 1.05rem;
+}
+#checked-modal .db-actions {
+  margin-top: 2px;
+  gap: 10px;
 }
 #conflict-message {
   margin: 10px 0 14px;
@@ -702,9 +772,10 @@ body.add-panel-collapsed .options-fab-btn {
     width: 100%;
     justify-content: flex-start;
     flex-wrap: wrap;
+    gap: 12px;
   }
   #checked-modal .db-icon-btn {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
   }
 }

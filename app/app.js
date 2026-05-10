@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v86";
+const APP_VERSION = "v93";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -55,7 +55,8 @@ const state = {
   lastSyncError: "",
   lastSyncAt: null,
   lastAction: null,
-  hideBigShopItems: false
+  hideBigShopItems: false,
+  dbFilterQuery: ""
 };
 
 const el = {
@@ -81,6 +82,7 @@ const el = {
 
   checkedModal: document.getElementById("checked-modal"),
   checkedList: document.getElementById("checked-list"),
+  checkedFilterInput: document.getElementById("checked-filter-input"),
   showCheckedBtn: document.getElementById("show-checked-btn"),
   closeCheckedBtn: document.getElementById("close-checked-btn"),
   dbFeedback: document.getElementById("db-feedback"),
@@ -212,6 +214,12 @@ function bindEvents() {
   });
 
   el.closeCheckedBtn.addEventListener("click", closeCheckedModal);
+  if (el.checkedFilterInput) {
+    el.checkedFilterInput.addEventListener("input", () => {
+      state.dbFilterQuery = el.checkedFilterInput.value.trim();
+      renderCheckedModal();
+    });
+  }
 
   el.checkToast.addEventListener("click", async () => {
     if (checkToastMode === "undo") {
@@ -444,24 +452,55 @@ function renderCheckedModal() {
     }
   }
 
-  const entries = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  if (el.checkedFilterInput) {
+    el.checkedFilterInput.value = state.dbFilterQuery;
+  }
+
+  const filterQuery = state.dbFilterQuery.trim().toLowerCase();
+  const entries = [...byKey.values()]
+    .filter((entry) => !filterQuery || entry.name.toLowerCase().includes(filterQuery))
+    .sort((a, b) => a.name.localeCompare(b.name));
   el.checkedList.innerHTML = "";
 
+  if (!entries.length) {
+    const emptyLi = document.createElement("li");
+    emptyLi.className = "item-row db-empty-row";
+    emptyLi.textContent = "No items match your filter.";
+    el.checkedList.appendChild(emptyLi);
+    return;
+  }
+
   for (const entry of entries) {
+    const isExpanded = false;
     const li = document.createElement("li");
     li.className = "item-row";
     li.innerHTML = `
-      <div>
-        <span class="item-name"></span>
-        <div class="db-section-row">
-          <label>Section</label>
-          <select class="db-section-select"></select>
+      <div class="db-row-card">
+        <button class="db-row-toggle" type="button" aria-expanded="${isExpanded ? "true" : "false"}">
+          <span class="item-name"></span>
+          <span class="db-row-chevron">${isExpanded ? "▾" : "▸"}</span>
+        </button>
+        <div class="db-row-details"${isExpanded ? "" : " hidden"}>
+          <div class="db-section-row">
+            <label>Section</label>
+            <select class="db-section-select"></select>
+          </div>
+          <div class="db-actions"></div>
         </div>
       </div>
-      <div class="db-actions"></div>
     `;
 
     li.querySelector(".item-name").textContent = entry.name;
+    const toggleBtn = li.querySelector(".db-row-toggle");
+    const details = li.querySelector(".db-row-details");
+    const chevron = li.querySelector(".db-row-chevron");
+    toggleBtn.addEventListener("click", () => {
+      const currentlyExpanded = !details.hidden;
+      details.hidden = currentlyExpanded;
+      toggleBtn.setAttribute("aria-expanded", currentlyExpanded ? "false" : "true");
+      chevron.textContent = currentlyExpanded ? "▸" : "▾";
+    });
+
     const sectionSelect = li.querySelector(".db-section-select");
     sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
     sectionSelect.value = normalizeSection(entry.section) || SECTIONS[0];
@@ -506,6 +545,33 @@ function renderCheckedModal() {
       render();
     });
     actions.appendChild(bigShopBtn);
+
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "db-icon-btn db-edit-btn";
+    renameBtn.textContent = "✎";
+    renameBtn.title = "Rename item";
+    renameBtn.setAttribute("aria-label", "Rename item");
+    renameBtn.addEventListener("click", async () => {
+      const nextNameInput = window.prompt(`Rename "${entry.name}" to:`, entry.name);
+      if (nextNameInput === null) return;
+      const nextName = normalizeItemName(nextNameInput);
+      if (!nextName) {
+        showDbFeedback("Enter a valid item name");
+        return;
+      }
+      if (canonicalNameKey(nextName) === canonicalNameKey(entry.name)) {
+        showDbFeedback("Name is unchanged");
+        return;
+      }
+
+      await renameDatabaseEntry(entry.name, nextName);
+      renderCheckedModal();
+      render();
+      syncNow();
+      showDbFeedback(`Renamed to ${nextName}`);
+    });
+    actions.appendChild(renameBtn);
 
     const delBtn = document.createElement("button");
     delBtn.type = "button";
@@ -1184,6 +1250,52 @@ async function deleteDatabaseEntry(name) {
 
   await persistLocal();
   await deleteSuggestionsRemote(removed);
+}
+
+async function renameDatabaseEntry(currentName, nextNameInput) {
+  const currentKey = canonicalNameKey(currentName);
+  const nextName = normalizeItemName(nextNameInput);
+  const nextKey = canonicalNameKey(nextName);
+  if (!currentKey || !nextKey || currentKey === nextKey) return;
+
+  const matchingSuggestions = state.suggestions.filter((s) => canonicalNameKey(s.name) === currentKey);
+  const existingTargetSuggestions = state.suggestions.filter((s) => canonicalNameKey(s.name) === nextKey);
+  const combined = [...matchingSuggestions, ...existingTargetSuggestions];
+
+  if (combined.length) {
+    const primary = { ...combined[0] };
+    const sectionCandidate = combined.find((s) => normalizeSection(s.section))?.section || "";
+    const useCount = combined.reduce((max, s) => Math.max(max, s.use_count || 0), 0) || 1;
+    const lastUsedAt = combined.reduce((latest, s) => {
+      const value = s.last_used_at || "";
+      return value > latest ? value : latest;
+    }, "");
+
+    primary.name = nextName;
+    primary.section = sectionCandidate;
+    primary.favourite = combined.some((s) => Boolean(s.favourite));
+    primary.big_shop = combined.some((s) => Boolean(s.big_shop));
+    primary.use_count = useCount;
+    primary.last_used_at = lastUsedAt || new Date().toISOString();
+
+    const combinedIds = new Set(combined.map((s) => s.id));
+    const removedSuggestions = combined.filter((s) => s.id !== primary.id);
+    state.suggestions = state.suggestions.filter((s) => !combinedIds.has(s.id));
+    state.suggestions.push(primary);
+    await upsertSuggestionRemote(primary);
+    await deleteSuggestionsRemote(removedSuggestions);
+  }
+
+  for (const item of state.items) {
+    if (item.deleted_at) continue;
+    if (canonicalNameKey(item.name) !== currentKey) continue;
+    item.name = nextName;
+    item.updated_at = new Date().toISOString();
+    await enqueue("upsert", item);
+  }
+
+  rebuildSuggestionIndex();
+  await persistLocal();
 }
 
 async function addFavouritesToList() {
