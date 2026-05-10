@@ -556,6 +556,7 @@ body.options-menu-open::before {
   border: 1px solid var(--border);
   box-shadow: 0 12px 28px rgb(0 0 0 / 0.2);
   padding: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
 }
 .meal-edit-popup-card h3 {
   margin: 0 0 10px;
@@ -840,6 +841,14 @@ body.add-panel-collapsed .options-fab-btn {
 }
 @media (max-width: 900px) {
   .app-shell { padding: 14px; }
+  .sync-bar {
+    display: grid;
+    gap: 4px;
+    font-size: 0.92rem;
+  }
+  .sync-bar > span:last-child {
+    font-size: 0.86rem;
+  }
   .topbar { gap: 10px; }
   .add-layout { gap: 10px; }
   #item-section { width: 100%; }
@@ -850,6 +859,59 @@ body.add-panel-collapsed .options-fab-btn {
   .add-card {
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
     max-height: min(58vh, 500px);
+    padding: 16px;
+  }
+  .add-mode-tab {
+    min-height: 48px;
+  }
+  #add-meal-filter,
+  #meal-picker-filter,
+  .meal-editor-form input,
+  .meal-editor-form textarea,
+  .add-card input,
+  .add-card select,
+  .add-card button {
+    min-height: 46px;
+  }
+  .item-main-btn {
+    min-height: 50px;
+    padding: 12px;
+  }
+  .item-menu-btn,
+  .delete-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .modal-content {
+    width: min(96vw, 680px);
+    max-height: 90vh;
+    border-radius: 14px;
+    padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .meal-edit-popup {
+    padding: 10px;
+  }
+  .meal-edit-popup-card {
+    width: min(98vw, 640px);
+    max-height: 90vh;
+    border-radius: 14px;
+    padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .meal-editor-form .db-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .meal-editor-form .db-actions .icon-btn {
+    width: 100%;
+    min-height: 48px;
+  }
+  #meal-editor-list .icon-btn {
+    min-height: 44px;
+    min-width: 72px;
   }
   .add-fab-btn {
     width: 40px;
@@ -881,7 +943,7 @@ body.add-panel-collapsed .options-fab-btn {
   }
   .options-menu {
     bottom: calc(100% + 10px);
-    width: min(290px, 88vw);
+    width: min(320px, 90vw);
   }
   #checked-modal .item-row {
     grid-template-columns: 1fr;

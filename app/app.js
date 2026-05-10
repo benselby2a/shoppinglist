@@ -4,7 +4,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v114";
+const APP_VERSION = "v119";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -746,9 +746,22 @@ function setAddMode(mode) {
 
 function renderAddMealSuggestions() {
   const q = state.mealPickerQuery.toLowerCase();
+  if (q.length < 2) {
+    hideAddMealSuggestions();
+    updateAddMealSubmitButton();
+    return;
+  }
   const meals = [...state.meals]
     .filter((m) => !q || (m.name || "").toLowerCase().includes(q))
     .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+  const exactMeal = state.meals.find((m) => (m.name || "").toLowerCase() === q);
+  if (exactMeal) {
+    state.selectedAddMealId = exactMeal.id;
+    hideAddMealSuggestions();
+    updateAddMealSubmitButton();
+    return;
+  }
   el.addMealOptions.innerHTML = "";
   if (!meals.length) {
     state.selectedAddMealId = null;
@@ -841,7 +854,9 @@ function syncAddMealSuggestionActiveState() {
 function updateAddMealSubmitButton() {
   const selectedMeal = state.meals.find((m) => m.id === state.selectedAddMealId);
   el.addSelectedMealBtn.disabled = !selectedMeal;
-  el.addSelectedMealBtn.textContent = "Add meal items to list";
+  el.addSelectedMealBtn.textContent = selectedMeal
+    ? `Add Items for ${selectedMeal.name} to List`
+    : "Add meal items to list";
 }
 
 function openMealPicker() {
@@ -1626,7 +1641,7 @@ function captureUndo(type, payload) {
   state.lastAction = { type, payload, ts: Date.now() };
   el.topUndoBtn.disabled = false;
   el.topUndoBtn.textContent = buildUndoButtonLabel(type, payload);
-  if (type === "check" || type === "item-meta" || type === "add") {
+  if (type === "check" || type === "check-all" || type === "item-meta" || type === "add") {
     showCheckToast(payload?.name, payload?.action_message);
   }
 }
@@ -1640,6 +1655,15 @@ async function undoLastAction() {
     if (item) {
       item.deleted_at = new Date().toISOString();
       await enqueue("upsert", item);
+    }
+  } else if (type === "check-all") {
+    const previousItems = Array.isArray(payload?.items) ? payload.items : [];
+    for (const previous of previousItems) {
+      const idx = state.items.findIndex((i) => i.id === previous.id);
+      if (idx < 0) continue;
+      state.items[idx] = previous;
+      state.items[idx].updated_at = new Date().toISOString();
+      await enqueue("upsert", state.items[idx]);
     }
   } else if (type === "item-meta") {
     const name = payload?.name || "";
@@ -1761,6 +1785,7 @@ function showReleaseBanner() {
 function actionLabel(type) {
   if (type === "add") return "add item";
   if (type === "check") return "check item";
+  if (type === "check-all") return "check all";
   if (type === "uncheck") return "uncheck item";
   if (type === "delete") return "remove item";
   if (type === "item-meta") return "item options";
@@ -2236,6 +2261,7 @@ async function checkAllActiveItems() {
     return;
   }
 
+  const previousItems = activeItems.map((item) => ({ ...item }));
   const nowIso = new Date().toISOString();
   for (const item of activeItems) {
     item.checked = true;
@@ -2243,9 +2269,13 @@ async function checkAllActiveItems() {
     await enqueue("upsert", item);
   }
 
+  captureUndo("check-all", {
+    name: `${activeItems.length} items`,
+    action_message: "Checked all items",
+    items: previousItems
+  });
   render();
   syncNow();
-  showInfoToast(`Checked ${activeItems.length} items`);
 }
 
 async function syncSuggestionsFromRemote() {
