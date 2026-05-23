@@ -1,10 +1,11 @@
 const APP_CONFIG = {
   supabaseUrl: "https://cnkznpkvwoqxaiywwmhr.supabase.co",
   supabaseAnonKey: "sb_publishable_xlNQ_QudJNUlMLjWpr0iJA_YgO87tox",
+  supabaseSchema: "shopping_list",
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v123";
+const APP_VERSION = "v124";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -2291,6 +2292,8 @@ async function apiRequest({ table, method, query = {}, headers = {}, body }) {
         apikey: supabase.anonKey,
         Authorization: `Bearer ${supabase.anonKey}`,
         "Content-Type": "application/json",
+        "Accept-Profile": APP_CONFIG.supabaseSchema || "public",
+        "Content-Profile": APP_CONFIG.supabaseSchema || "public",
         ...headers
       },
       body: body ? JSON.stringify(body) : undefined
