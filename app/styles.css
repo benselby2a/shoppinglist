@@ -319,6 +319,7 @@ body.options-menu-open::before {
   align-items: center;
   justify-content: flex-start;
   gap: 14px;
+  touch-action: manipulation;
 }
 .item-main-btn .item-name {
   display: inline-flex;

@@ -159,6 +159,8 @@ let releaseWaitingWorker = null;
 let releaseReloadPending = false;
 let releaseControllerSeenAtBoot = false;
 const RELEASE_COUNTDOWN_SECONDS = 5;
+const CHECK_ACTION_DEDUPE_MS = 400;
+const recentCheckActionByItemId = new Map();
 
 init();
 
@@ -412,9 +414,11 @@ function onServiceWorkerControllerChange() {
   }
   releaseControllerSeenAtBoot = true;
   if (releaseReloadPending) return;
-  if (releaseCountdownTimer || !el.releaseBanner.hidden) {
-    triggerReleaseReload();
+  if (!releaseCountdownTimer) {
+    startReleaseCountdown();
+    return;
   }
+  triggerReleaseReload();
 }
 
 function triggerReleaseReload() {
@@ -527,14 +531,14 @@ function itemRow(item) {
   row.querySelector(".item-name-text").textContent = item.name;
   row.querySelector(".item-qty").textContent = item.quantity_text || "";
 
-  row.querySelector(".item-main-btn").addEventListener("click", () => {
-    const prev = { ...item };
-    item.checked = true;
-    item.updated_at = new Date().toISOString();
-    captureUndo("check", prev);
-    render();
-    enqueue("upsert", item).catch(() => {});
-    syncNow();
+  const mainBtn = row.querySelector(".item-main-btn");
+  mainBtn.addEventListener("pointerup", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    markItemCheckedImmediately(item.id);
+  });
+  mainBtn.addEventListener("click", () => {
+    markItemCheckedImmediately(item.id);
   });
 
   const menuWrap = row.querySelector(".item-menu-wrap");
@@ -603,6 +607,24 @@ function itemRow(item) {
   document.addEventListener("click", () => { menu.hidden = true; });
 
   return row;
+}
+
+function markItemCheckedImmediately(itemId) {
+  const now = Date.now();
+  const lastActionAt = recentCheckActionByItemId.get(itemId) || 0;
+  if (now - lastActionAt < CHECK_ACTION_DEDUPE_MS) return;
+  recentCheckActionByItemId.set(itemId, now);
+
+  const target = state.items.find((i) => i.id === itemId);
+  if (!target || target.checked || target.deleted_at) return;
+
+  const prev = { ...target };
+  target.checked = true;
+  target.updated_at = new Date().toISOString();
+  captureUndo("check", prev);
+  render();
+  enqueue("upsert", target).catch(() => {});
+  syncNow();
 }
 
 function renderCheckedModal() {
@@ -1791,7 +1813,8 @@ async function syncNow() {
   if (!error) state.lastSyncAt = new Date().toISOString();
 
   if (data) {
-    const merged = mergeById(state.items, data);
+    const pendingShoppingById = buildPendingShoppingPayloadMap();
+    const merged = mergeById(state.items, data, pendingShoppingById);
     detectConflicts(state.items, merged);
     state.items = merged;
   }
@@ -1835,13 +1858,7 @@ function inferPendingTable(op) {
 
 function detectConflicts(localItems, mergedItems) {
   const localById = new Map(localItems.map((i) => [i.id, i]));
-  const pendingShoppingById = new Map();
-  for (const op of state.pending) {
-    if (inferPendingTable(op) !== "shopping_items") continue;
-    const id = op?.payload?.id;
-    if (!id) continue;
-    pendingShoppingById.set(id, op.payload);
-  }
+  const pendingShoppingById = buildPendingShoppingPayloadMap();
 
   for (const remote of mergedItems) {
     const local = localById.get(remote.id);
@@ -1892,10 +1909,32 @@ async function enqueue(type, payload, table = "shopping_items") {
   await persistLocal();
 }
 
-function mergeById(local, remote) {
+function mergeById(local, remote, pendingShoppingById = new Map()) {
   const byId = new Map(local.map((i) => [i.id, i]));
-  for (const i of remote) byId.set(i.id, i);
+  for (const i of remote) {
+    const localItem = byId.get(i.id);
+    const pendingPayload = pendingShoppingById.get(i.id);
+    if (localItem && pendingPayload) {
+      const remoteTs = Date.parse(i.updated_at || 0) || 0;
+      const localTs = Date.parse(localItem.updated_at || 0) || 0;
+      const pendingTs = Date.parse(pendingPayload.updated_at || 0) || 0;
+      // Prefer local state while a newer/equal pending write is still unsynced.
+      if (Math.max(localTs, pendingTs) >= remoteTs) continue;
+    }
+    byId.set(i.id, i);
+  }
   return [...byId.values()];
+}
+
+function buildPendingShoppingPayloadMap() {
+  const pendingShoppingById = new Map();
+  for (const op of state.pending) {
+    if (inferPendingTable(op) !== "shopping_items") continue;
+    const id = op?.payload?.id;
+    if (!id) continue;
+    pendingShoppingById.set(id, op.payload);
+  }
+  return pendingShoppingById;
 }
 
 async function upsertSuggestion(name, section) {
