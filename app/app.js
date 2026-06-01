@@ -5,7 +5,7 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
-const APP_VERSION = "v124";
+const APP_VERSION = "v125";
 
 const SECTIONS = [
   "Fruit and Veg",
