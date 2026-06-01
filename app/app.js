@@ -158,7 +158,7 @@ let releaseCountdownSeconds = 0;
 let releaseWaitingWorker = null;
 let releaseReloadPending = false;
 let releaseControllerSeenAtBoot = false;
-const RELEASE_COUNTDOWN_SECONDS = 8;
+const RELEASE_COUNTDOWN_SECONDS = 5;
 
 init();
 
