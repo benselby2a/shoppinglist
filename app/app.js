@@ -112,6 +112,7 @@ const el = {
   resolveConflictBtn: document.getElementById("resolve-conflict-btn"),
 
   releaseBanner: document.getElementById("release-banner"),
+  releaseBannerText: document.getElementById("release-banner-text"),
   releaseRefreshBtn: document.getElementById("release-refresh-btn"),
   appVersion: document.getElementById("app-version"),
 
@@ -152,6 +153,12 @@ let mealEditSuggestionActiveIndex = -1;
 let checkToastTimer = null;
 let checkToastMode = "undo";
 let dbFeedbackTimer = null;
+let releaseCountdownTimer = null;
+let releaseCountdownSeconds = 0;
+let releaseWaitingWorker = null;
+let releaseReloadPending = false;
+let releaseControllerSeenAtBoot = false;
+const RELEASE_COUNTDOWN_SECONDS = 8;
 
 init();
 
@@ -179,9 +186,7 @@ async function init() {
     if (!document.hidden) syncNow();
   });
 
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js");
-  }
+  initServiceWorkerReleaseFlow();
 }
 
 function bindEvents() {
@@ -343,9 +348,84 @@ function bindEvents() {
   el.resolveConflictBtn.addEventListener("click", acknowledgeConflict);
 
   el.releaseRefreshBtn.addEventListener("click", () => {
-    el.releaseBanner.hidden = true;
-    location.reload();
+    startReleaseCountdown();
   });
+}
+
+async function initServiceWorkerReleaseFlow() {
+  if (!("serviceWorker" in navigator)) return;
+  releaseControllerSeenAtBoot = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener("controllerchange", onServiceWorkerControllerChange);
+  try {
+    const registration = await navigator.serviceWorker.register("./sw.js");
+    monitorServiceWorkerRegistration(registration);
+    if (registration.waiting) onNewServiceWorkerReady(registration.waiting);
+    setInterval(() => registration.update().catch(() => {}), 60000);
+  } catch (err) {
+    console.warn("Service worker registration failed", err);
+  }
+}
+
+function monitorServiceWorkerRegistration(registration) {
+  if (!registration) return;
+  registration.addEventListener("updatefound", () => {
+    const installing = registration.installing;
+    if (!installing) return;
+    installing.addEventListener("statechange", () => {
+      if (installing.state === "installed" && navigator.serviceWorker.controller) {
+        onNewServiceWorkerReady(registration.waiting || installing);
+      }
+    });
+  });
+}
+
+function onNewServiceWorkerReady(waitingWorker) {
+  releaseWaitingWorker = waitingWorker || releaseWaitingWorker;
+  startReleaseCountdown();
+}
+
+function startReleaseCountdown() {
+  if (releaseCountdownTimer || releaseReloadPending) return;
+  releaseCountdownSeconds = RELEASE_COUNTDOWN_SECONDS;
+  renderReleaseBanner();
+  el.releaseBanner.hidden = false;
+  requestServiceWorkerActivation();
+  releaseCountdownTimer = setInterval(() => {
+    releaseCountdownSeconds -= 1;
+    renderReleaseBanner();
+    if (releaseCountdownSeconds <= 0) {
+      triggerReleaseReload();
+    }
+  }, 1000);
+}
+
+function requestServiceWorkerActivation() {
+  try {
+    releaseWaitingWorker?.postMessage({ type: "SKIP_WAITING" });
+  } catch {}
+}
+
+function onServiceWorkerControllerChange() {
+  if (!releaseControllerSeenAtBoot) {
+    releaseControllerSeenAtBoot = true;
+    return;
+  }
+  releaseControllerSeenAtBoot = true;
+  if (releaseReloadPending) return;
+  if (releaseCountdownTimer || !el.releaseBanner.hidden) {
+    triggerReleaseReload();
+  }
+}
+
+function triggerReleaseReload() {
+  if (releaseReloadPending) return;
+  releaseReloadPending = true;
+  if (releaseCountdownTimer) {
+    clearInterval(releaseCountdownTimer);
+    releaseCountdownTimer = null;
+  }
+  renderReleaseBanner(true);
+  setTimeout(() => location.reload(), 250);
 }
 
 function guardPasscode() {
@@ -1567,7 +1647,21 @@ function showDbFeedback(message) {
 }
 
 function showReleaseBanner() {
-  el.releaseBanner.hidden = true;
+  startReleaseCountdown();
+}
+
+function renderReleaseBanner(isRestarting = false) {
+  if (!el.releaseBannerText || !el.releaseRefreshBtn) return;
+  if (isRestarting) {
+    el.releaseBannerText.textContent = "Applying update...";
+    el.releaseRefreshBtn.textContent = "Restarting";
+    el.releaseRefreshBtn.disabled = true;
+    return;
+  }
+  const seconds = Math.max(0, releaseCountdownSeconds);
+  el.releaseBannerText.textContent = `New version available. Restarting in ${seconds}s`;
+  el.releaseRefreshBtn.textContent = "Restart now";
+  el.releaseRefreshBtn.disabled = false;
 }
 
 function actionLabel(type) {
