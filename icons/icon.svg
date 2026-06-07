@@ -1,12 +1,34 @@
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id='bg' x1='0' y1='0' x2='0' y2='1'>
-      <stop offset='0%' stop-color='#0f4f77'/>
-      <stop offset='100%' stop-color='#1e7fb4'/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f4f77"/>
+      <stop offset="100%" stop-color="#1e7fb4"/>
     </linearGradient>
   </defs>
-  <rect width='512' height='512' rx='96' fill='url(#bg)'/>
-  <circle cx='256' cy='256' r='188' fill='#ffffff20'/>
-  <text x='50%' y='47%' dominant-baseline='middle' text-anchor='middle' font-size='188'>🐳</text>
-  <text x='50%' y='71%' dominant-baseline='middle' text-anchor='middle' font-size='118'>🛒</text>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="188" fill="#ffffff20"/>
+  <!-- Whale body -->
+  <ellipse cx="250" cy="190" rx="90" ry="55" fill="#4fc3f7"/>
+  <ellipse cx="250" cy="200" rx="75" ry="40" fill="#29b6f6"/>
+  <!-- Whale tail -->
+  <path d="M340 185 Q370 155 365 130 Q355 150 340 160 Q345 145 335 125 Q330 150 320 165" fill="#4fc3f7"/>
+  <!-- Whale eye -->
+  <circle cx="195" cy="180" r="8" fill="#fff"/>
+  <circle cx="197" cy="179" r="4" fill="#1a1a2e"/>
+  <!-- Whale mouth -->
+  <path d="M165 200 Q195 215 230 205" fill="none" stroke="#1565c0" stroke-width="3" stroke-linecap="round"/>
+  <!-- Whale spout -->
+  <path d="M220 140 Q215 120 205 110 M220 140 Q225 118 235 108" fill="none" stroke="#81d4fa" stroke-width="4" stroke-linecap="round"/>
+  <!-- Shopping cart basket -->
+  <path d="M195 320 L210 380 L305 380 L320 320 Z" fill="#e0e0e0" stroke="#bdbdbd" stroke-width="3"/>
+  <!-- Cart handle -->
+  <path d="M195 320 L175 300 L165 300" fill="none" stroke="#bdbdbd" stroke-width="5" stroke-linecap="round"/>
+  <!-- Cart grid lines -->
+  <line x1="225" y1="320" x2="230" y2="380" stroke="#bdbdbd" stroke-width="2"/>
+  <line x1="257" y1="320" x2="257" y2="380" stroke="#bdbdbd" stroke-width="2"/>
+  <line x1="290" y1="320" x2="285" y2="380" stroke="#bdbdbd" stroke-width="2"/>
+  <line x1="200" y1="350" x2="315" y2="350" stroke="#bdbdbd" stroke-width="2"/>
+  <!-- Cart wheels -->
+  <circle cx="220" cy="395" r="10" fill="#757575" stroke="#616161" stroke-width="2"/>
+  <circle cx="295" cy="395" r="10" fill="#757575" stroke="#616161" stroke-width="2"/>
 </svg>
