@@ -28,7 +28,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) accessToken = session.access_token;
 }
-const APP_VERSION = "v126";
+const APP_VERSION = "v127";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -233,12 +233,13 @@ async function init() {
   }
 
   if (sbClient) {
-    sbClient.auth.onAuthStateChange(async (_event, session) => {
+    sbClient.auth.onAuthStateChange((_event, session) => {
       if (session) {
         accessToken = session.access_token;
         setAuthedUI(true);
-        await initApp();
-      } else {
+        // Defer to avoid Supabase internal lock in Safari
+        setTimeout(() => initApp(), 0);
+      } else if (navigator.onLine) {
         setAuthedUI(false);
       }
     });
@@ -246,6 +247,10 @@ async function init() {
     const { data: { session } } = await sbClient.auth.getSession();
     if (session) {
       accessToken = session.access_token;
+      setAuthedUI(true);
+      await initApp();
+    } else if (!navigator.onLine) {
+      // Offline with no session — launch app in offline mode with local data
       setAuthedUI(true);
       await initApp();
     } else {
