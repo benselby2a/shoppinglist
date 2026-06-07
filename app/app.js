@@ -28,7 +28,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) accessToken = session.access_token;
 }
-const APP_VERSION = "v125";
+const APP_VERSION = "v126";
 
 const SECTIONS = [
   "Fruit and Veg",
