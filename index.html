@@ -14,7 +14,23 @@
     <link rel="stylesheet" href="./app/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div id="auth-gate" class="auth-gate">
+      <div class="auth-card">
+        <h1>🐳🛒 MSL</h1>
+        <p>Sign in to continue.</p>
+        <form id="sign-in-form">
+          <label>Email
+            <input id="sign-in-email" type="email" placeholder="you@example.com" required />
+          </label>
+          <label>Password
+            <input id="sign-in-password" type="password" placeholder="Password" required minlength="6" />
+          </label>
+          <div id="auth-error" style="color:#ef5350;font-size:0.8rem;margin-top:0.5rem"></div>
+          <button type="submit">Sign In</button>
+        </form>
+      </div>
+    </div>
+    <div class="app-shell hidden" id="app-shell">
       <header class="topbar">
         <div>
           <h1>🐳🛒 MSL <span id="app-version" class="app-version"></span></h1>
@@ -176,6 +192,7 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script type="module" src="./app/app.js"></script>
   </body>
 </html>

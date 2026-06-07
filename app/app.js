@@ -5,6 +5,29 @@ const APP_CONFIG = {
   householdId: "shared-household",
   passcode: ""
 };
+
+const inHub = window !== window.parent;
+if (inHub) document.documentElement.setAttribute("data-hub", "");
+
+let sbClient = null;
+let accessToken = null;
+
+if (window.supabase && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey) {
+  sbClient = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
+}
+
+function setAuthedUI(authed) {
+  const gate = document.getElementById("auth-gate");
+  const shell = document.getElementById("app-shell");
+  if (gate) gate.classList.toggle("hidden", authed);
+  if (shell) shell.classList.toggle("hidden", !authed);
+}
+
+async function refreshAccessToken() {
+  if (!sbClient) return;
+  const { data: { session } } = await sbClient.auth.getSession();
+  if (session) accessToken = session.access_token;
+}
 const APP_VERSION = "v125";
 
 const SECTIONS = [
@@ -164,7 +187,10 @@ const recentCheckActionByItemId = new Map();
 
 init();
 
-async function init() {
+let appInitialised = false;
+async function initApp() {
+  if (appInitialised) return;
+  appInitialised = true;
   guardPasscode();
   if (el.appVersion) el.appVersion.textContent = APP_VERSION;
   el.sectionSelect.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
@@ -189,6 +215,45 @@ async function init() {
   });
 
   initServiceWorkerReleaseFlow();
+}
+
+async function init() {
+  const signInForm = document.getElementById("sign-in-form");
+  const authError = document.getElementById("auth-error");
+
+  if (signInForm) {
+    signInForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (authError) authError.textContent = "";
+      const email = document.getElementById("sign-in-email").value;
+      const password = document.getElementById("sign-in-password").value;
+      const { error } = await sbClient.auth.signInWithPassword({ email, password });
+      if (error && authError) authError.textContent = error.message;
+    });
+  }
+
+  if (sbClient) {
+    sbClient.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        accessToken = session.access_token;
+        setAuthedUI(true);
+        await initApp();
+      } else {
+        setAuthedUI(false);
+      }
+    });
+
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (session) {
+      accessToken = session.access_token;
+      setAuthedUI(true);
+      await initApp();
+    } else {
+      setAuthedUI(false);
+    }
+  } else {
+    await initApp();
+  }
 }
 
 function bindEvents() {
@@ -2415,6 +2480,8 @@ async function apiDelete(table, { eq = {}, ilike = {} } = {}) {
 async function apiRequest({ table, method, query = {}, headers = {}, body }) {
   if (!supabase) return { data: null, error: { message: "Supabase not configured" } };
 
+  await refreshAccessToken();
+  const token = accessToken || supabase.anonKey;
   const qs = new URLSearchParams(query).toString();
   const url = `${supabase.url}/rest/v1/${table}${qs ? `?${qs}` : ""}`;
 
@@ -2423,7 +2490,7 @@ async function apiRequest({ table, method, query = {}, headers = {}, body }) {
       method,
       headers: {
         apikey: supabase.anonKey,
-        Authorization: `Bearer ${supabase.anonKey}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         "Accept-Profile": APP_CONFIG.supabaseSchema || "public",
         "Content-Profile": APP_CONFIG.supabaseSchema || "public",
