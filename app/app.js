@@ -28,7 +28,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) accessToken = session.access_token;
 }
-const APP_VERSION = "v127";
+const APP_VERSION = "v128";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -1854,6 +1854,8 @@ async function initSupabase() {
 
 async function syncNow() {
   if (!supabase || state.syncing) return;
+  // Skip sync silently if no auth token yet (still establishing connection)
+  if (!accessToken) return;
   state.syncing = true;
   renderSyncBar();
 
@@ -1879,7 +1881,14 @@ async function syncNow() {
 
   state.supabaseReachable = !error;
   state.online = !error;
-  state.lastSyncError = error ? `connect failed: ${error.message}` : "";
+  // Only show errors after we've connected successfully at least once
+  if (error && state.lastSyncAt) {
+    state.lastSyncError = `connect failed: ${error.message}`;
+  } else if (error) {
+    state.lastSyncError = "";
+  } else {
+    state.lastSyncError = "";
+  }
   if (!error) state.lastSyncAt = new Date().toISOString();
 
   if (data) {
