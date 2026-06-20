@@ -28,7 +28,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) accessToken = session.access_token;
 }
-const APP_VERSION = "v128";
+const APP_VERSION = "v129";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -75,7 +75,7 @@ const state = {
   conflictQueue: [],
   syncing: false,
   online: navigator.onLine,
-  supabaseReachable: false,
+  supabaseReachable: true,
   lastSyncError: "",
   lastSyncAt: null,
   lastAction: null,
@@ -1880,12 +1880,8 @@ async function syncNow() {
   });
 
   state.supabaseReachable = !error;
-  state.online = !error;
-  // Only show errors after we've connected successfully at least once
   if (error && state.lastSyncAt) {
     state.lastSyncError = `connect failed: ${error.message}`;
-  } else if (error) {
-    state.lastSyncError = "";
   } else {
     state.lastSyncError = "";
   }
