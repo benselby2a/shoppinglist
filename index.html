@@ -32,15 +32,12 @@
     </div>
     <div class="app-shell hidden" id="app-shell">
       <header class="topbar">
-        <div>
+        <div class="topbar-title">
           <h1>🐳🛒 MSL <span id="app-version" class="app-version"></span></h1>
+          <span id="sync-bar" class="sync-dot sync-offline"><span id="sync-text">Offline</span></span>
         </div>
+        <span id="sync-meta" class="sync-meta"></span>
       </header>
-
-      <section id="sync-bar" class="sync-bar sync-offline">
-        <span id="sync-text">Offline</span>
-        <span id="sync-meta">0 pending · 0 conflicts</span>
-      </section>
 
       <main>
         <div id="sections-container"></div>

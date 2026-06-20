@@ -116,13 +116,21 @@ body.options-menu-open::before {
   outline: 2px solid #1f6f5f;
   outline-offset: 2px;
 }
-.sync-bar {
-  margin: 10px 0;
-  padding: 10px 12px;
-  border-radius: 12px;
+.topbar-title {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.95rem;
+  align-items: center;
+  gap: 8px;
+}
+.sync-dot {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.sync-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 .sync-online { background: #dff4ff; color: #0f4f77; }
 .sync-offline { background: #fff1d7; color: #8a6523; }
@@ -332,7 +340,7 @@ body.options-menu-open::before {
 }
 .suggestions { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--border); }
 .suggestions li { padding: 8px 0; cursor: pointer; color: var(--muted); }
-.section-title { margin: 2px 2px 12px; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.section-title { margin: 0 0 12px; padding: 8px 2px; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 0; z-index: 5; background: var(--surface); }
 .item-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #efe9dd; }
 .item-row:first-child { border-top: 0; }
 .item-name { font-size: 1.05rem; }
@@ -448,6 +456,29 @@ body.options-menu-open::before {
 }
 .item-menu .action-label {
   display: inline-block;
+}
+.item-menu-field {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+.item-menu-field label {
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.item-menu-field select,
+.item-menu-field input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: #fff;
+  min-width: 0;
 }
 .db-actions {
   display: inline-flex;
@@ -908,14 +939,6 @@ body.add-panel-collapsed .options-fab-btn {
 }
 @media (max-width: 900px) {
   .app-shell { padding: 14px; }
-  .sync-bar {
-    display: grid;
-    gap: 4px;
-    font-size: 0.92rem;
-  }
-  .sync-bar > span:last-child {
-    font-size: 0.86rem;
-  }
   .topbar { gap: 10px; }
   .add-layout { gap: 10px; }
   #item-section { width: 100%; }

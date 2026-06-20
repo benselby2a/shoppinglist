@@ -28,7 +28,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) accessToken = session.access_token;
 }
-const APP_VERSION = "v129";
+const APP_VERSION = "v131";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -591,6 +591,14 @@ function itemRow(item) {
     <div class="item-menu-wrap">
       <button class="item-menu-btn" type="button" aria-label="Item actions">...</button>
       <div class="item-menu" hidden>
+        <div class="item-menu-field">
+          <label>Qty</label>
+          <input class="item-menu-qty" type="text" placeholder="e.g. 2, 500g" />
+        </div>
+        <div class="item-menu-field">
+          <label>Section</label>
+          <select class="item-menu-section"></select>
+        </div>
         <button class="item-menu-fav-btn db-icon-btn db-fav-btn item-menu-action-btn" type="button"></button>
         <button class="item-menu-big-btn db-icon-btn db-big-shop-btn item-menu-action-btn" type="button"></button>
       </div>
@@ -616,6 +624,30 @@ function itemRow(item) {
   const menu = row.querySelector(".item-menu");
   const favBtn = row.querySelector(".item-menu-fav-btn");
   const bigBtn = row.querySelector(".item-menu-big-btn");
+
+  const menuQty = row.querySelector(".item-menu-qty");
+  menuQty.value = item.quantity_text || "";
+  menuQty.addEventListener("change", async (ev) => {
+    ev.stopPropagation();
+    item.quantity_text = menuQty.value.trim();
+    item.updated_at = new Date().toISOString();
+    row.querySelector(".item-qty").textContent = item.quantity_text;
+    await enqueue("upsert", item);
+    syncNow();
+  });
+  menuQty.addEventListener("click", (ev) => ev.stopPropagation());
+
+  const menuSection = row.querySelector(".item-menu-section");
+  menuSection.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
+  menuSection.value = getEffectiveSection(item);
+  menuSection.addEventListener("change", async (ev) => {
+    ev.stopPropagation();
+    await updateEntrySection(item.name, menuSection.value);
+    menu.hidden = true;
+    render();
+    syncNow();
+  });
+  menuSection.addEventListener("click", (ev) => ev.stopPropagation());
 
   const refreshMenuLabels = () => {
     const favActive = isFavouriteItem(item);
@@ -1554,8 +1586,8 @@ function renderSyncBar() {
   const effectivelyOnline = state.online && (supabase ? state.supabaseReachable : true);
   const warning = hasError || !effectivelyOnline;
 
-  el.syncBar.className = `sync-bar ${warning ? "sync-conflict" : "sync-online"}`;
-  el.syncText.textContent = warning ? "Sync warning" : state.syncing ? "Checking..." : "Online";
+  el.syncBar.className = `sync-dot ${warning ? "sync-conflict" : "sync-online"}`;
+  el.syncText.textContent = warning ? "Sync warning" : state.syncing ? "Syncing" : "Online";
 
   if (warning && pendingCount > 0) {
     el.syncMeta.textContent = `${pendingCount} updates will sync once connectivity is restored`;
