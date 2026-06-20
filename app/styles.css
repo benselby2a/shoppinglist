@@ -328,32 +328,6 @@ body.options-menu-open::before {
   border-radius: 999px;
   padding: 2px 8px;
 }
-.add-flags-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-.add-flag-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-raised);
-  color: var(--text);
-  font-weight: 700;
-  font-size: 1.02rem;
-}
-.add-flag-check input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  -webkit-appearance: checkbox;
-  appearance: auto;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
 .suggestions { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--border); }
 .suggestions li { padding: 8px 0; cursor: pointer; color: var(--muted); }
 .section-title { margin: -14px -14px 6px; padding: 8px 14px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--border); border-radius: 16px 16px 0 0; }
@@ -520,15 +494,6 @@ body.options-menu-open::before {
 }
 .db-uncheck-btn {
   color: var(--brand);
-}
-.db-big-shop-btn {
-  color: var(--muted);
-  opacity: 0.65;
-}
-.db-big-shop-btn.is-active {
-  color: var(--brand);
-  opacity: 1;
-  box-shadow: 0 0 0 2px var(--brand-soft);
 }
 .db-edit-btn {
   color: var(--brand);

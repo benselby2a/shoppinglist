@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v134";
+const APP_VERSION = "v135";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -69,7 +69,6 @@ const SECTION_KEYWORDS = {
 };
 
 const ADD_CARD_COLLAPSED_KEY = "shopping_list_add_card_collapsed";
-const HIDE_BIG_SHOP_FILTER_KEY = "shopping_list_hide_big_shop";
 
 const state = {
   items: [],
@@ -83,7 +82,6 @@ const state = {
   lastSyncError: "",
   lastSyncAt: null,
   lastAction: null,
-  hideBigShopItems: false,
   dbFilterQuery: "",
   meals: [],
   mealItems: [],
@@ -104,7 +102,6 @@ const el = {
   addCard: document.querySelector(".add-card"),
   addForm: document.getElementById("add-form"),
   addFabBtn: document.getElementById("add-fab-btn"),
-  addBigShopCheckbox: document.getElementById("add-big-shop-checkbox"),
   addModeItemBtn: document.getElementById("add-mode-item-btn"),
   addModeMealBtn: document.getElementById("add-mode-meal-btn"),
   addItemPane: document.getElementById("add-item-pane"),
@@ -119,7 +116,6 @@ const el = {
 
   topUndoBtn: document.getElementById("top-undo-btn"),
   checkAllBtn: document.getElementById("check-all-btn"),
-  smallShopFilterBtn: document.getElementById("small-shop-filter-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
   manageMealsBtn: document.getElementById("manage-meals-btn"),
 
@@ -202,10 +198,7 @@ async function initApp() {
   el.mealEditItemSection.innerHTML = SECTIONS.map((s) => `<option value="${s}">${s}</option>`).join("");
   bindEvents();
   await loadLocal();
-  state.hideBigShopItems = localStorage.getItem(HIDE_BIG_SHOP_FILTER_KEY) === "true";
-  renderBigShopFilterButton();
   setAddCardCollapsed(true);
-  el.addBigShopCheckbox.checked = true;
   setAddMode("item");
   await seedSuggestionsFromItems();
   render();
@@ -315,16 +308,6 @@ function bindEvents() {
     el.optionsMenu.hidden = true;
     document.body.classList.remove("options-menu-open");
   });
-  el.smallShopFilterBtn.addEventListener("click", () => {
-    state.hideBigShopItems = !state.hideBigShopItems;
-    localStorage.setItem(HIDE_BIG_SHOP_FILTER_KEY, String(state.hideBigShopItems));
-    renderBigShopFilterButton();
-    render();
-    showInfoToast(state.hideBigShopItems ? "Hiding big shop items" : "Showing full list");
-    el.optionsMenu.hidden = true;
-    document.body.classList.remove("options-menu-open");
-  });
-
   el.addFavouritesBtn.addEventListener("click", () => {
     addFavouritesToList();
     showInfoToast("Added favourite items");
@@ -549,12 +532,8 @@ async function onAddItemSubmit(e) {
   render();
   enqueue("upsert", item).catch(() => {});
   upsertSuggestion(name, item.section).catch(() => {});
-  if (el.addBigShopCheckbox.checked) {
-    setBigShop(name, true, item.section).catch(() => {});
-  }
 
   el.addForm.reset();
-  el.addBigShopCheckbox.checked = true;
   hideSuggestions();
   setAddCardCollapsed(true);
   syncNow();
@@ -564,7 +543,6 @@ function render() {
   const grouped = new Map(SECTIONS.map((s) => [s, []]));
   for (const item of state.items) {
     if (item.checked || item.deleted_at) continue;
-    if (state.hideBigShopItems && isBigShopItem(item)) continue;
     grouped.get(getEffectiveSection(item))?.push(item);
   }
 
@@ -607,7 +585,6 @@ function itemRow(item) {
           <select class="item-menu-section"></select>
         </div>
         <button class="item-menu-fav-btn db-icon-btn db-fav-btn item-menu-action-btn" type="button"></button>
-        <button class="item-menu-big-btn db-icon-btn db-big-shop-btn item-menu-action-btn" type="button"></button>
       </div>
     </div>
   `;
@@ -630,7 +607,6 @@ function itemRow(item) {
   const menuBtn = row.querySelector(".item-menu-btn");
   const menu = row.querySelector(".item-menu");
   const favBtn = row.querySelector(".item-menu-fav-btn");
-  const bigBtn = row.querySelector(".item-menu-big-btn");
 
   const menuQty = row.querySelector(".item-menu-qty");
   menuQty.value = item.quantity_text || "";
@@ -659,14 +635,9 @@ function itemRow(item) {
 
   const refreshMenuLabels = () => {
     const favActive = isFavouriteItem(item);
-    const bigActive = isBigShopItem(item);
     favBtn.innerHTML = `<span class="action-icon">${favActive ? "★" : "☆"}</span><span class="action-label">${favActive ? "Remove favourite" : "Mark favourite"}</span>`;
     favBtn.title = favActive ? "Remove favourite" : "Mark favourite";
     favBtn.setAttribute("aria-label", favBtn.title);
-    bigBtn.innerHTML = `<span class="action-icon">🛒</span><span class="action-label">${bigActive ? "Remove big shop" : "Mark big shop"}</span>`;
-    bigBtn.title = bigActive ? "Remove big shop" : "Mark big shop";
-    bigBtn.setAttribute("aria-label", bigBtn.title);
-    bigBtn.classList.toggle("is-active", bigActive);
   };
   refreshMenuLabels();
 
@@ -680,34 +651,14 @@ function itemRow(item) {
   favBtn.addEventListener("click", async (ev) => {
     ev.stopPropagation();
     const prevFavourite = isFavouriteItem(item);
-    const prevBigShop = isBigShopItem(item);
     const actionMessage = prevFavourite ? "Removed favourite" : "Marked favourite";
     captureUndo("item-meta", {
       name: item.name,
       section: getEffectiveSection(item),
       favourite: prevFavourite,
-      big_shop: prevBigShop,
       action_message: actionMessage
     });
     await setFavourite(item.name, !prevFavourite, getEffectiveSection(item));
-    refreshMenuLabels();
-    render();
-    menu.hidden = true;
-  });
-
-  bigBtn.addEventListener("click", async (ev) => {
-    ev.stopPropagation();
-    const prevFavourite = isFavouriteItem(item);
-    const prevBigShop = isBigShopItem(item);
-    const actionMessage = prevBigShop ? "Removed big shop" : "Marked big shop";
-    captureUndo("item-meta", {
-      name: item.name,
-      section: getEffectiveSection(item),
-      favourite: prevFavourite,
-      big_shop: prevBigShop,
-      action_message: actionMessage
-    });
-    await setBigShop(item.name, !prevBigShop, getEffectiveSection(item));
     refreshMenuLabels();
     render();
     menu.hidden = true;
@@ -848,26 +799,6 @@ function renderCheckedModal() {
       renderCheckedModal();
     });
     actions.appendChild(favBtn);
-
-    const bigShopBtn = document.createElement("button");
-    bigShopBtn.type = "button";
-    bigShopBtn.className = "db-icon-btn db-big-shop-btn";
-    bigShopBtn.textContent = "🛒";
-    bigShopBtn.title = entry.big_shop ? "Remove from Big Shop" : "Mark as Big Shop";
-    bigShopBtn.setAttribute("aria-label", bigShopBtn.title);
-    if (entry.big_shop) bigShopBtn.classList.add("is-active");
-    bigShopBtn.addEventListener("click", async () => {
-      const previousWindowScrollY = window.scrollY;
-      const checkedModalContent = el.checkedModal.querySelector(".modal-content");
-      const previousScrollTop = checkedModalContent ? checkedModalContent.scrollTop : 0;
-      await setBigShop(entry.name, !entry.big_shop, entry.section);
-      renderCheckedModal();
-      const nextCheckedModalContent = el.checkedModal.querySelector(".modal-content");
-      if (nextCheckedModalContent) nextCheckedModalContent.scrollTop = previousScrollTop;
-      window.scrollTo(0, previousWindowScrollY);
-      render();
-    });
-    actions.appendChild(bigShopBtn);
 
     const renameBtn = document.createElement("button");
     renameBtn.type = "button";
@@ -1457,7 +1388,6 @@ async function addMealToList(mealId) {
 function renderSuggestions() {
   const q = el.itemName.value.trim().toLowerCase();
   applySectionGuess(q);
-  applyAddFlagDefaults(q);
 
   if (q.length < 3) {
     lastSuggestionQuery = q;
@@ -1529,7 +1459,6 @@ function renderSuggestions() {
       const value = btn.getAttribute("data-value") || "";
       el.itemName.value = value;
       applySectionGuess(value.toLowerCase());
-      applyAddFlagDefaults(value.toLowerCase());
       hideSuggestions();
     });
   }
@@ -1584,7 +1513,6 @@ function applySuggestionHighlight(options, index) {
       const value = btn.getAttribute("data-value") || "";
       el.itemName.value = value;
       applySectionGuess(value.toLowerCase());
-      applyAddFlagDefaults(value.toLowerCase());
     }
   });
 }
@@ -1812,11 +1740,6 @@ function buildUndoButtonLabel(type, payload) {
   return `Undo ${action}`;
 }
 
-function renderBigShopFilterButton() {
-  if (!el.smallShopFilterBtn) return;
-  el.smallShopFilterBtn.textContent = state.hideBigShopItems ? "Show Full List" : "Hide Big Shop Items";
-}
-
 function getEffectiveSection(item) {
   const key = canonicalNameKey(item.name);
   if (!key) return normalizeSection(item.section) || SECTIONS[0];
@@ -1828,20 +1751,6 @@ function applySectionGuess(queryLower) {
   if (!queryLower) return;
   const guessed = guessSection(queryLower);
   if (guessed) el.sectionSelect.value = guessed;
-}
-
-function applyAddFlagDefaults(queryLower) {
-  const q = (queryLower || "").trim();
-  if (!q) {
-    el.addBigShopCheckbox.checked = true;
-    return;
-  }
-
-  const match = state.suggestions.find((s) => {
-    const name = (s.name || "").trim().toLowerCase();
-    return name === q;
-  });
-  el.addBigShopCheckbox.checked = match ? Boolean(match.big_shop) : true;
 }
 
 function guessSection(queryLower) {
@@ -2466,12 +2375,6 @@ function isActiveDuplicateName(name) {
   return getActiveUncheckedNameKeys().has(key);
 }
 
-function isBigShopItem(item) {
-  const key = canonicalNameKey(item?.name);
-  if (!key) return false;
-  return state.suggestions.some((s) => canonicalNameKey(s.name) === key && Boolean(s.big_shop));
-}
-
 function isFavouriteItem(item) {
   const key = canonicalNameKey(item?.name);
   if (!key) return false;
@@ -2481,7 +2384,6 @@ function isFavouriteItem(item) {
 function getItemStatusPrefix(item) {
   let prefix = "";
   if (isFavouriteItem(item)) prefix += "★ ";
-  if (isBigShopItem(item)) prefix += "🛒 ";
   return prefix;
 }
 
