@@ -11,6 +11,7 @@ if (inHub) document.documentElement.setAttribute("data-hub", "");
 
 let sbClient = null;
 let accessToken = null;
+let currentUserId = null;
 
 if (window.supabase && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey) {
   sbClient = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
@@ -26,9 +27,12 @@ function setAuthedUI(authed) {
 async function refreshAccessToken() {
   if (!sbClient) return;
   const { data: { session } } = await sbClient.auth.getSession();
-  if (session) accessToken = session.access_token;
+  if (session) {
+    accessToken = session.access_token;
+    currentUserId = session.user?.id || null;
+  }
 }
-const APP_VERSION = "v132";
+const APP_VERSION = "v134";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -236,6 +240,7 @@ async function init() {
     sbClient.auth.onAuthStateChange((_event, session) => {
       if (session) {
         accessToken = session.access_token;
+        currentUserId = session.user?.id || null;
         setAuthedUI(true);
         // Defer to avoid Supabase internal lock in Safari
         setTimeout(() => initApp(), 0);
@@ -247,6 +252,7 @@ async function init() {
     const { data: { session } } = await sbClient.auth.getSession();
     if (session) {
       accessToken = session.access_token;
+      currentUserId = session.user?.id || null;
       setAuthedUI(true);
       await initApp();
     } else if (!navigator.onLine) {
@@ -534,7 +540,8 @@ async function onAddItemSubmit(e) {
     quantity_text: el.itemQty.value.trim(),
     checked: false,
     deleted_at: null,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    updated_by: currentUserId
   };
 
   state.items.push(item);
@@ -631,6 +638,7 @@ function itemRow(item) {
     ev.stopPropagation();
     item.quantity_text = menuQty.value.trim();
     item.updated_at = new Date().toISOString();
+    item.updated_by = currentUserId;
     row.querySelector(".item-qty").textContent = item.quantity_text;
     await enqueue("upsert", item);
     syncNow();
@@ -723,6 +731,7 @@ function markItemCheckedImmediately(itemId) {
   const prev = { ...target };
   target.checked = true;
   target.updated_at = new Date().toISOString();
+  target.updated_by = currentUserId;
   captureUndo("check", prev);
   render();
   enqueue("upsert", target).catch(() => {});
@@ -2174,6 +2183,7 @@ async function updateEntrySection(name, newSection) {
     if (canonicalNameKey(item.name) !== key) continue;
     item.section = section;
     item.updated_at = new Date().toISOString();
+    item.updated_by = currentUserId;
     await enqueue("upsert", item);
   }
 
@@ -2193,6 +2203,7 @@ async function deleteDatabaseEntry(name) {
   for (const item of affectedItems) {
     item.deleted_at = new Date().toISOString();
     item.updated_at = new Date().toISOString();
+    item.updated_by = currentUserId;
     await enqueue("upsert", item);
   }
 
@@ -2239,6 +2250,7 @@ async function renameDatabaseEntry(currentName, nextNameInput) {
     if (canonicalNameKey(item.name) !== currentKey) continue;
     item.name = nextName;
     item.updated_at = new Date().toISOString();
+    item.updated_by = currentUserId;
     await enqueue("upsert", item);
   }
 
