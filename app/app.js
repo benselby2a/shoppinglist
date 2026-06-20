@@ -28,7 +28,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) accessToken = session.access_token;
 }
-const APP_VERSION = "v131";
+const APP_VERSION = "v132";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -1589,20 +1589,18 @@ function renderSyncBar() {
   el.syncBar.className = `sync-dot ${warning ? "sync-conflict" : "sync-online"}`;
   el.syncText.textContent = warning ? "Sync warning" : state.syncing ? "Syncing" : "Online";
 
+  let meta = "";
   if (warning && pendingCount > 0) {
-    el.syncMeta.textContent = `${pendingCount} updates will sync once connectivity is restored`;
+    meta = `· ${pendingCount} pending`;
   } else if (warning) {
-    el.syncMeta.textContent = state.lastSyncError || "Sync warning";
+    meta = "";
   } else if (pendingCount > 0) {
-    el.syncMeta.textContent = state.syncing
-      ? `Syncing ${pendingCount} pending updates...`
-      : `${pendingCount} pending updates`;
+    meta = `· ${pendingCount} pending`;
   } else if (state.lastSyncAt) {
-    const t = new Date(state.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    el.syncMeta.textContent = `Last update: ${t}`;
-  } else {
-    el.syncMeta.textContent = "Last update: --";
+    const t = new Date(state.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    meta = `· ${t}`;
   }
+  el.syncMeta.textContent = meta;
 }
 
 function setAddCardCollapsed(collapsed) {

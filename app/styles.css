@@ -69,7 +69,7 @@ body.options-menu-open::before {
   opacity: 1;
 }
 .app-shell { max-width: 860px; margin: 0 auto; padding: 12px; }
-.topbar { display: flex; justify-content: space-between; align-items: center; }
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .topbar h1 { margin: 0; font-size: 1.5rem; }
 .app-version {
   font-size: 0.62em;
@@ -124,13 +124,13 @@ body.options-menu-open::before {
 .sync-dot {
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   white-space: nowrap;
 }
 .sync-meta {
-  font-size: 0.78rem;
-  color: var(--muted);
+  font-weight: 400;
+  opacity: 0.7;
 }
 .sync-online { background: #dff4ff; color: #0f4f77; }
 .sync-offline { background: #fff1d7; color: #8a6523; }
@@ -340,8 +340,8 @@ body.options-menu-open::before {
 }
 .suggestions { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--border); }
 .suggestions li { padding: 8px 0; cursor: pointer; color: var(--muted); }
-.section-title { margin: 0 0 12px; padding: 8px 2px; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 0; z-index: 5; background: var(--surface); }
-.item-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #efe9dd; }
+.section-title { margin: 0 0 6px; padding: 4px 2px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 0; z-index: 5; background: var(--surface); }
+.item-row { display: grid; grid-template-columns: 1fr auto; align-items: stretch; gap: 10px; padding: 10px 0; border-top: 1px solid #efe9dd; }
 .item-row:first-child { border-top: 0; }
 .item-name { font-size: 1.05rem; }
 .item-qty { color: var(--muted); font-size: 0.9rem; }
@@ -407,7 +407,7 @@ body.options-menu-open::before {
 }
 .item-menu-btn {
   width: 40px;
-  height: 40px;
+  height: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: #fff;
