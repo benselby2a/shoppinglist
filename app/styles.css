@@ -161,6 +161,21 @@ body.options-menu-open::before {
   margin-bottom: 14px;
   box-shadow: 0 6px 18px rgb(14 70 112 / 0.09);
 }
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--muted);
+}
+.empty-state-emoji {
+  font-size: 2.4rem;
+  margin-bottom: 10px;
+}
+.empty-state p {
+  margin: 0 auto;
+  max-width: 320px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
 .add-card input, .add-card select, .add-card button {
   width: 100%;
   padding: 14px;
