@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v136";
+const APP_VERSION = "v137";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -424,6 +424,13 @@ function bindEvents() {
 
   el.closeConflictBtn.addEventListener("click", acknowledgeConflict);
   el.resolveConflictBtn.addEventListener("click", acknowledgeConflict);
+  el.conflictMessage.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".conflict-keep-btn, .conflict-remove-btn");
+    if (!btn) return;
+    const index = Number(btn.getAttribute("data-index"));
+    const action = btn.classList.contains("conflict-keep-btn") ? "keep" : "remove";
+    resolveConflict(index, action);
+  });
 
   el.releaseRefreshBtn.addEventListener("click", () => {
     startReleaseCountdown();
@@ -1639,7 +1646,10 @@ function queueConflict(message) {
 }
 
 function showConflictSummary() {
-  if (!state.conflictQueue.length) return;
+  if (!state.conflictQueue.length) {
+    el.conflictModal.classList.remove("is-open");
+    return;
+  }
   const rows = state.conflictQueue.map((entry, i) => {
     if (typeof entry === "string") {
       return `<div><strong>${i + 1}. ${escapeHtml(entry)}</strong></div>`;
@@ -1647,6 +1657,14 @@ function showConflictSummary() {
     const detailsHtml = (entry.details || [])
       .map((line) => `<div>${escapeHtml(line)}</div>`)
       .join("");
+    const actionsHtml = entry.resolvable
+      ? `
+        <div class="conflict-actions">
+          <button class="icon-btn conflict-keep-btn" type="button" data-index="${i}">Keep on list</button>
+          <button class="icon-btn conflict-remove-btn" type="button" data-index="${i}">Remove from list</button>
+        </div>
+      `
+      : "";
     return `
       <div class="conflict-entry">
         <strong>${i + 1}. ${escapeHtml(entry.summary || "Conflict detected")}</strong>
@@ -1654,11 +1672,40 @@ function showConflictSummary() {
           <summary>Show details</summary>
           <div class="conflict-details">${detailsHtml}</div>
         </details>
+        ${actionsHtml}
       </div>
     `;
   }).join("");
   el.conflictMessage.innerHTML = rows;
   el.conflictModal.classList.add("is-open");
+}
+
+async function resolveConflict(index, action) {
+  const entry = state.conflictQueue[index];
+  if (!entry || !entry.resolvable) return;
+  const { itemId, localSnapshot, remoteSnapshot } = entry;
+
+  // Drop any stale queued write for this item so it doesn't re-fight the
+  // resolution we're about to apply on the next sync.
+  state.pending = state.pending.filter(
+    (op) => !(op?.payload?.id === itemId && inferPendingTable(op) === "shopping_items")
+  );
+
+  const idx = state.items.findIndex((i) => i.id === itemId);
+  if (action === "keep") {
+    const revived = { ...localSnapshot, deleted_at: null, updated_at: new Date().toISOString() };
+    if (idx >= 0) state.items[idx] = revived;
+    else state.items.push(revived);
+    await enqueue("upsert", revived);
+  } else if (action === "remove") {
+    if (idx >= 0) state.items[idx] = { ...remoteSnapshot };
+    await persistLocal();
+  }
+
+  state.conflictQueue.splice(index, 1);
+  render();
+  showConflictSummary();
+  if (action === "keep") syncNow();
 }
 
 function acknowledgeConflict() {
@@ -1910,7 +1957,24 @@ function detectConflicts(localItems, mergedItems) {
     if (rts <= lts) continue;
     // Only flag genuine write-write divergence for unsynced shopping-item writes.
     if (!hasMaterialDifference(pendingPayload, remote)) continue;
-    queueConflict(describeRemoteResolution(local, remote));
+
+    // A remote removal racing an unsynced local edit can't be auto-resolved safely:
+    // picking remote silently drops the item, picking local silently undoes someone
+    // else's delete. Keep the item on the list and let the user decide instead.
+    const isUnresolvableRemoval = !local.deleted_at && remote.deleted_at;
+    if (isUnresolvableRemoval) {
+      const idx = mergedItems.findIndex((i) => i.id === remote.id);
+      if (idx >= 0) mergedItems[idx] = local;
+      queueConflict({
+        ...describeRemoteResolution(local, remote),
+        resolvable: true,
+        itemId: remote.id,
+        localSnapshot: local,
+        remoteSnapshot: remote
+      });
+    } else {
+      queueConflict(describeRemoteResolution(local, remote));
+    }
   }
 }
 
