@@ -275,6 +275,23 @@ function bindEvents() {
   el.addFabBtn.addEventListener("click", () => {
     setAddCardCollapsed(!el.addCard.classList.contains("is-collapsed"));
   });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" || ev.isComposing) return;
+    if (!el.addCard.classList.contains("is-collapsed")) return;
+    if (el.appShell.classList.contains("hidden") || el.appShell.classList.contains("modal-focus")) return;
+    const active = document.activeElement;
+    const isInteractive =
+      active &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.tagName === "SELECT" ||
+        active.tagName === "BUTTON" ||
+        active.isContentEditable);
+    if (isInteractive) return;
+    ev.preventDefault();
+    setAddCardCollapsed(false);
+  });
   el.optionsFabBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
     const opening = el.optionsMenu.hidden;
