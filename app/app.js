@@ -592,6 +592,16 @@ function render() {
     el.sectionsContainer.appendChild(card);
   }
 
+  if (!el.sectionsContainer.children.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = `
+      <div class="empty-state-emoji">🐳🛒</div>
+      <p>Manatee mode: chill and empty. Add something whenever you're ready.</p>
+    `;
+    el.sectionsContainer.appendChild(empty);
+  }
+
   renderSyncBar();
 }
 
