@@ -305,6 +305,16 @@ function bindEvents() {
   });
 
   el.addForm.addEventListener("submit", onAddItemSubmit);
+  el.addForm.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" || ev.isComposing) return;
+    if (state.addMode !== "item") return;
+    if (el.addCard.classList.contains("is-collapsed")) return;
+    if (el.itemName.value.trim()) return;
+    ev.preventDefault();
+    hideSuggestions();
+    el.itemName.blur();
+    setAddCardCollapsed(true);
+  });
   el.itemName.addEventListener("input", scheduleSuggestionsRender);
   el.itemName.addEventListener("focus", renderSuggestions);
   el.itemName.addEventListener("keydown", onSuggestionKeyDown);
