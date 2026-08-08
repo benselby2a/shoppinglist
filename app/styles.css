@@ -770,6 +770,27 @@ body.options-menu-open::before {
   background: var(--surface-raised);
   font-size: 0.9rem;
 }
+.conflict-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.conflict-actions .icon-btn {
+  flex: 1;
+  padding: 8px 10px;
+  min-height: 38px;
+  font-size: 0.88rem;
+}
+.conflict-remove-btn {
+  background: #ffe5df;
+  color: #8b2d2a;
+  border-color: #f3b7ab;
+}
+[data-theme="dark"] .conflict-remove-btn {
+  background: #3b1f1f;
+  color: #fca5a5;
+  border-color: #5c2b2b;
+}
 main {
   padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
 }

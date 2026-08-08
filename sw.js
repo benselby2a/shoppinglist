@@ -1,9 +1,10 @@
-const CACHE_VERSION = "msl-shell-v135";
+const CACHE_VERSION = "msl-shell-v136";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
   "./app/styles.css",
   "./app/app.js",
+  "./app/vendor/supabase.js",
   "./manifest.webmanifest",
   "./icons/icon.svg"
 ];
@@ -59,6 +60,7 @@ self.addEventListener("fetch", (event) => {
     relPath === "/index.html" ||
     relPath === "/app/styles.css" ||
     relPath === "/app/app.js" ||
+    relPath === "/app/vendor/supabase.js" ||
     relPath === "/manifest.webmanifest" ||
     relPath === "/icons/icon.svg"
   ) {
