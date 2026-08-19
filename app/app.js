@@ -1471,7 +1471,7 @@ function renderSuggestions() {
   }
 
   const matches = [...byKey.values()]
-    .filter((s) => s.nameLower.includes(q) && s.nameLower !== q)
+    .filter((s) => s.nameLower.includes(q))
     .sort((a, b) => {
       const aStarts = a.nameLower.startsWith(q) ? 0 : 1;
       const bStarts = b.nameLower.startsWith(q) ? 0 : 1;
