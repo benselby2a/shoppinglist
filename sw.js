@@ -1,4 +1,4 @@
-const CACHE_VERSION = "msl-shell-v136";
+const CACHE_VERSION = "msl-shell-v137";
 const SHELL_ASSETS = [
   "./",
   "./index.html",

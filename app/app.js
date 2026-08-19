@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v137";
+const APP_VERSION = "v138";
 
 const SECTIONS = [
   "Fruit and Veg",
