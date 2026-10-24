@@ -14,9 +14,14 @@
     <link rel="stylesheet" href="./app/styles.css" />
     <script>
       var inHub = window !== window.parent;
+      // Fill in with the embedding hub's actual origin(s), e.g. "https://hub.example.com".
+      // Left empty, embedded theme messages are ignored rather than trusted blindly.
+      var TRUSTED_HUB_ORIGINS = [];
       if (inHub) {
         document.documentElement.setAttribute('data-hub', '');
         window.addEventListener('message', function(e) {
+          if (e.source !== window.parent) return;
+          if (TRUSTED_HUB_ORIGINS.indexOf(e.origin) === -1) return;
           if (e.data && e.data.type === 'theme') {
             document.documentElement.setAttribute('data-theme', e.data.value);
           }
