@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v139";
+const APP_VERSION = "v140";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -2536,7 +2536,11 @@ async function apiRequest({ table, method, query = {}, headers = {}, body }) {
   if (!supabase) return { data: null, error: { message: "Supabase not configured" } };
 
   await refreshAccessToken();
-  const token = accessToken || supabase.anonKey;
+  // The backend only grants the "authenticated" role access (see
+  // supabase/migrations/2026-10-24_require_authenticated_access.sql); never
+  // fall back to the anon key here, or every write silently reduces to an
+  // unauthenticated request that RLS will reject anyway.
+  if (!accessToken) return { data: null, error: { message: "Not signed in" } };
   const qs = new URLSearchParams(query).toString();
   const url = `${supabase.url}/rest/v1/${table}${qs ? `?${qs}` : ""}`;
 
@@ -2545,7 +2549,7 @@ async function apiRequest({ table, method, query = {}, headers = {}, body }) {
       method,
       headers: {
         apikey: supabase.anonKey,
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
         "Accept-Profile": APP_CONFIG.supabaseSchema || "public",
         "Content-Profile": APP_CONFIG.supabaseSchema || "public",
@@ -2603,7 +2607,8 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function levenshtein(a, b) {

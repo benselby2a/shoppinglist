@@ -29,6 +29,11 @@
 
 ## Supabase Health Checks
 - Confirm `supabaseUrl` and `supabaseAnonKey` in `app/app.js`
-- Check RLS allows `shared-household` operations
+- RLS requires an authenticated session for every table (`to authenticated`,
+  gated further by `household_id = 'shared-household'`) -- the `anon` role
+  has no access at all. See
+  `supabase/migrations/2026-10-24_require_authenticated_access.sql`.
+- Sync and any remote write silently no-ops until the user is signed in
+  (`apiRequest` returns an error instead of falling back to the anon key)
 - If offline: app should still work locally and queue pending ops
 

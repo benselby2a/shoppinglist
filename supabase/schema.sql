@@ -76,18 +76,23 @@ alter table public.suggestion_items enable row level security;
 alter table public.meals enable row level security;
 alter table public.meal_items enable row level security;
 
+-- Policies are scoped to "authenticated" only. household_id is a fixed,
+-- non-secret string that ships in the public client bundle, so it must
+-- never be the only gate -- granting "anon" access here would let anyone
+-- holding the (necessarily public) anon key read/write this data with no
+-- sign-in at all.
 drop policy if exists "household read items" on public.shopping_items;
 create policy "household read items"
   on public.shopping_items
   for select
-  to anon
+  to authenticated
   using (household_id = 'shared-household');
 
 drop policy if exists "household write items" on public.shopping_items;
 create policy "household write items"
   on public.shopping_items
   for all
-  to anon
+  to authenticated
   using (household_id = 'shared-household')
   with check (household_id = 'shared-household');
 
@@ -95,14 +100,14 @@ drop policy if exists "household read suggestions" on public.suggestion_items;
 create policy "household read suggestions"
   on public.suggestion_items
   for select
-  to anon
+  to authenticated
   using (household_id = 'shared-household');
 
 drop policy if exists "household write suggestions" on public.suggestion_items;
 create policy "household write suggestions"
   on public.suggestion_items
   for all
-  to anon
+  to authenticated
   using (household_id = 'shared-household')
   with check (household_id = 'shared-household');
 
@@ -110,14 +115,14 @@ drop policy if exists "household read meals" on public.meals;
 create policy "household read meals"
   on public.meals
   for select
-  to anon
+  to authenticated
   using (household_id = 'shared-household');
 
 drop policy if exists "household write meals" on public.meals;
 create policy "household write meals"
   on public.meals
   for all
-  to anon
+  to authenticated
   using (household_id = 'shared-household')
   with check (household_id = 'shared-household');
 
@@ -125,14 +130,14 @@ drop policy if exists "household read meal items" on public.meal_items;
 create policy "household read meal items"
   on public.meal_items
   for select
-  to anon
+  to authenticated
   using (household_id = 'shared-household');
 
 drop policy if exists "household write meal items" on public.meal_items;
 create policy "household write meal items"
   on public.meal_items
   for all
-  to anon
+  to authenticated
   using (household_id = 'shared-household')
   with check (household_id = 'shared-household');
 
