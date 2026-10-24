@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v138";
+const APP_VERSION = "v139";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -1747,7 +1747,7 @@ function showCheckToast(itemName, actionMessage = "") {
     el.checkToastText.textContent = `Update saved for ${label}. Tap to undo.`;
   }
   el.checkToast.hidden = false;
-  checkToastTimer = setTimeout(hideCheckToast, 3000);
+  checkToastTimer = setTimeout(hideCheckToast, 1500);
 }
 
 function showDuplicateToast(itemName) {
