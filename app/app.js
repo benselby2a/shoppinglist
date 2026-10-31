@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v142";
+const APP_VERSION = "v143";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -774,6 +774,7 @@ function itemRow(item) {
           <select class="item-menu-section"></select>
         </div>
         <button class="item-menu-fav-btn db-icon-btn db-fav-btn item-menu-action-btn" type="button"></button>
+        <button class="item-menu-shop-btn db-icon-btn item-menu-action-btn" type="button"></button>
       </div>
     </div>
   `;
@@ -851,6 +852,25 @@ function itemRow(item) {
     refreshMenuLabels();
     render();
     menu.hidden = true;
+  });
+
+  // Sends the item to the other list (small <-> big); it leaves the current view.
+  const shopBtn = row.querySelector(".item-menu-shop-btn");
+  const toSmall = !isSmallShop();
+  const shopLabel = toSmall ? "Move to small shop" : "Move to big shop";
+  shopBtn.innerHTML = `<span class="action-icon">⇄</span><span class="action-label">${shopLabel}</span>`;
+  shopBtn.title = shopLabel;
+  shopBtn.setAttribute("aria-label", shopLabel);
+  shopBtn.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    item.small_shop = toSmall;
+    item.updated_at = new Date().toISOString();
+    item.updated_by = currentUserId;
+    menu.hidden = true;
+    render();
+    showInfoToast(`Moved ${item.name} to the ${toSmall ? "small" : "big"} shop`);
+    await enqueue("upsert", item);
+    syncNow();
   });
 
   menuWrap.addEventListener("click", (ev) => ev.stopPropagation());
