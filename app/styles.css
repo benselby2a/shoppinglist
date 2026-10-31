@@ -1083,3 +1083,7 @@ body.add-panel-collapsed .options-fab-btn {
   font-weight: 600;
   cursor: pointer;
 }
+
+#shop-mode-btn[hidden] {
+  display: none !important;
+}

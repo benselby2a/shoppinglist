@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v145";
+const APP_VERSION = "v146";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -671,6 +671,9 @@ function promoteHiddenDuplicate(key) {
 function renderShopModeBanner(hiddenCount) {
   const small = isSmallShop();
   el.shopModeBtn.textContent = small ? "Switch to Big Shop" : "Switch to Small Shop";
+  // Nothing to set aside when the big list is empty; always allow leaving small shop.
+  const hasActiveItems = state.items.some((i) => !i.deleted_at && !i.checked);
+  el.shopModeBtn.hidden = !small && !hasActiveItems;
   // In big shop mode only surface the banner when small-shop-only items are tucked away.
   el.shopModeBanner.hidden = !small && !hiddenCount;
   if (el.shopModeBanner.hidden) return;
@@ -699,7 +702,6 @@ async function applyShopMode(mode) {
   );
   render();
   syncNow();
-  showInfoToast(mode === "small" ? "Small shop: big shop items hidden" : "Big shop");
 }
 
 async function syncSettingsFromRemote() {
