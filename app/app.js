@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v141";
+const APP_VERSION = "v142";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -90,8 +90,8 @@ const state = {
   selectedAddMealId: null,
   editingMealId: null,
   mealEditDraftItems: [],
-  // Shared across devices via the list_settings table: "big" shows the whole
-  // list, "small" shows only items flagged small_shop (added during the trip).
+  // Shared across devices via the list_settings table: "small" shows only items
+  // flagged small_shop (added during a small shop); "big" shows everything else.
   shopMode: "big",
   shopModeUpdatedAt: null
 };
@@ -124,6 +124,11 @@ const el = {
   shopModeBanner: document.getElementById("shop-mode-banner"),
   shopModeText: document.getElementById("shop-mode-text"),
   shopModeSwitchBtn: document.getElementById("shop-mode-switch-btn"),
+  shopSwitchModal: document.getElementById("shop-switch-modal"),
+  shopSwitchText: document.getElementById("shop-switch-text"),
+  shopSwitchMoveBtn: document.getElementById("shop-switch-move-btn"),
+  shopSwitchKeepBtn: document.getElementById("shop-switch-keep-btn"),
+  shopSwitchStayBtn: document.getElementById("shop-switch-stay-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
   manageMealsBtn: document.getElementById("manage-meals-btn"),
 
@@ -344,6 +349,9 @@ function bindEvents() {
     document.body.classList.remove("options-menu-open");
   };
   el.shopModeBtn.addEventListener("click", onShopModeToggle);
+  el.shopSwitchMoveBtn.addEventListener("click", () => finishSwitchToBig(true));
+  el.shopSwitchKeepBtn.addEventListener("click", () => finishSwitchToBig(false));
+  el.shopSwitchStayBtn.addEventListener("click", () => el.shopSwitchModal.classList.remove("is-open"));
   el.shopModeSwitchBtn.addEventListener("click", onShopModeToggle);
   el.checkAllBtn.addEventListener("click", async () => {
     await checkAllActiveItems();
@@ -566,7 +574,7 @@ async function onAddItemSubmit(e) {
       setAddCardCollapsed(true);
       render();
       syncNow();
-      showInfoToast(`Added ${name} to the small shop`);
+      showInfoToast(`Added ${name} to the ${isSmallShop() ? "small" : "big"} shop`);
       return;
     }
     showDuplicateToast(name);
@@ -626,7 +634,7 @@ function render() {
   if (!el.sectionsContainer.children.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.innerHTML = hiddenCount
+    empty.innerHTML = isSmallShop() && hiddenCount
       ? `
       <div class="empty-state-emoji">🐳🛒</div>
       <p>Nothing on the small shop yet. Your big shop items are safe and sound, just hidden.</p>
@@ -646,7 +654,7 @@ function isSmallShop() {
 }
 
 function isHiddenByShopMode(item) {
-  return isSmallShop() && !item.small_shop;
+  return isSmallShop() ? !item.small_shop : Boolean(item.small_shop);
 }
 
 // Items created during a small shop are flagged so they stay visible in that mode.
@@ -654,15 +662,14 @@ function stampShopMode(item) {
   if (isSmallShop()) item.small_shop = true;
 }
 
-// Adding something already on the (hidden) big-shop list brings it into view
+// Adding something already on the other (hidden) list brings it into view
 // rather than reporting a duplicate the user cannot see.
 function promoteHiddenDuplicate(key) {
-  if (!isSmallShop()) return false;
   const hidden = state.items.find(
-    (i) => !i.deleted_at && !i.checked && !i.small_shop && canonicalNameKey(i.name) === key
+    (i) => !i.deleted_at && !i.checked && isHiddenByShopMode(i) && canonicalNameKey(i.name) === key
   );
   if (!hidden) return false;
-  hidden.small_shop = true;
+  hidden.small_shop = isSmallShop();
   hidden.updated_at = new Date().toISOString();
   hidden.updated_by = currentUserId;
   enqueue("upsert", hidden).catch(() => {});
@@ -671,19 +678,36 @@ function promoteHiddenDuplicate(key) {
 
 function renderShopModeBanner(hiddenCount) {
   const small = isSmallShop();
-  el.shopModeBanner.hidden = !small;
   el.shopModeBtn.textContent = small ? "Switch to Big Shop" : "Switch to Small Shop";
-  if (!small) return;
-  el.shopModeText.textContent = hiddenCount
-    ? `Small shop · ${hiddenCount} big shop item${hiddenCount === 1 ? "" : "s"} hidden`
-    : "Small shop";
+  // In big shop mode only surface the banner when small-shop-only items are tucked away.
+  el.shopModeBanner.hidden = !small && !hiddenCount;
+  if (el.shopModeBanner.hidden) return;
+  const plural = hiddenCount === 1 ? "" : "s";
+  el.shopModeText.textContent = small
+    ? (hiddenCount ? `Small shop · ${hiddenCount} big shop item${plural} hidden` : "Small shop")
+    : `${hiddenCount} small shop item${plural} hidden`;
+  el.shopModeSwitchBtn.textContent = small ? "Back to big shop" : "Small shop";
 }
 
 async function setShopMode(mode) {
   if (state.shopMode === mode) return;
-  const nowIso = new Date().toISOString();
-  if (mode === "small") {
-    // Anything flagged by an earlier small shop belongs to the big list again.
+  if (mode === "big") {
+    const added = state.items.filter((i) => !i.deleted_at && !i.checked && i.small_shop).length;
+    if (added) {
+      // Ask what should happen to the items added during the small shop.
+      const plural = added === 1 ? "" : "s";
+      el.shopSwitchText.textContent = `You added ${added} item${plural} during this small shop. Move ${added === 1 ? "it" : "them"} onto the big shop list, or keep ${added === 1 ? "it" : "them"} for small shops only?`;
+      el.shopSwitchModal.classList.add("is-open");
+      return;
+    }
+  }
+  await applyShopMode(mode);
+}
+
+async function finishSwitchToBig(moveToBig) {
+  el.shopSwitchModal.classList.remove("is-open");
+  if (moveToBig) {
+    const nowIso = new Date().toISOString();
     for (const item of state.items) {
       if (!item.small_shop || item.deleted_at || item.checked) continue;
       item.small_shop = false;
@@ -692,6 +716,11 @@ async function setShopMode(mode) {
       await enqueue("upsert", item);
     }
   }
+  await applyShopMode("big");
+}
+
+async function applyShopMode(mode) {
+  const nowIso = new Date().toISOString();
   state.shopMode = mode;
   state.shopModeUpdatedAt = nowIso;
   await enqueue(
@@ -701,7 +730,7 @@ async function setShopMode(mode) {
   );
   render();
   syncNow();
-  showInfoToast(mode === "small" ? "Small shop: big shop items hidden" : "Big shop: showing everything");
+  showInfoToast(mode === "small" ? "Small shop: big shop items hidden" : "Big shop");
 }
 
 async function syncSettingsFromRemote() {
