@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v140";
+const APP_VERSION = "v141";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -89,7 +89,11 @@ const state = {
   addMode: "item",
   selectedAddMealId: null,
   editingMealId: null,
-  mealEditDraftItems: []
+  mealEditDraftItems: [],
+  // Shared across devices via the list_settings table: "big" shows the whole
+  // list, "small" shows only items flagged small_shop (added during the trip).
+  shopMode: "big",
+  shopModeUpdatedAt: null
 };
 
 const el = {
@@ -116,6 +120,10 @@ const el = {
 
   topUndoBtn: document.getElementById("top-undo-btn"),
   checkAllBtn: document.getElementById("check-all-btn"),
+  shopModeBtn: document.getElementById("shop-mode-btn"),
+  shopModeBanner: document.getElementById("shop-mode-banner"),
+  shopModeText: document.getElementById("shop-mode-text"),
+  shopModeSwitchBtn: document.getElementById("shop-mode-switch-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
   manageMealsBtn: document.getElementById("manage-meals-btn"),
 
@@ -330,6 +338,13 @@ function bindEvents() {
     el.optionsMenu.hidden = true;
     document.body.classList.remove("options-menu-open");
   });
+  const onShopModeToggle = () => {
+    setShopMode(isSmallShop() ? "big" : "small");
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  };
+  el.shopModeBtn.addEventListener("click", onShopModeToggle);
+  el.shopModeSwitchBtn.addEventListener("click", onShopModeToggle);
   el.checkAllBtn.addEventListener("click", async () => {
     await checkAllActiveItems();
     el.optionsMenu.hidden = true;
@@ -545,6 +560,15 @@ async function onAddItemSubmit(e) {
   const name = autoCorrectItemName(rawName);
   if (!name) return;
   if (isActiveDuplicateName(name)) {
+    if (promoteHiddenDuplicate(canonicalNameKey(name))) {
+      el.addForm.reset();
+      hideSuggestions();
+      setAddCardCollapsed(true);
+      render();
+      syncNow();
+      showInfoToast(`Added ${name} to the small shop`);
+      return;
+    }
     showDuplicateToast(name);
     return;
   }
@@ -560,6 +584,7 @@ async function onAddItemSubmit(e) {
     updated_at: new Date().toISOString(),
     updated_by: currentUserId
   };
+  stampShopMode(item);
 
   state.items.push(item);
   captureUndo("add", { id: item.id, name: item.name });
@@ -575,10 +600,16 @@ async function onAddItemSubmit(e) {
 
 function render() {
   const grouped = new Map(SECTIONS.map((s) => [s, []]));
+  let hiddenCount = 0;
   for (const item of state.items) {
     if (item.checked || item.deleted_at) continue;
+    if (isHiddenByShopMode(item)) {
+      hiddenCount += 1;
+      continue;
+    }
     grouped.get(getEffectiveSection(item))?.push(item);
   }
+  renderShopModeBanner(hiddenCount);
 
   el.sectionsContainer.innerHTML = "";
   for (const section of SECTIONS) {
@@ -595,7 +626,12 @@ function render() {
   if (!el.sectionsContainer.children.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.innerHTML = `
+    empty.innerHTML = hiddenCount
+      ? `
+      <div class="empty-state-emoji">🐳🛒</div>
+      <p>Nothing on the small shop yet. Your big shop items are safe and sound, just hidden.</p>
+    `
+      : `
       <div class="empty-state-emoji">🐳🛒</div>
       <p>Manatee mode: chill and empty. Add something whenever you're ready.</p>
     `;
@@ -603,6 +639,86 @@ function render() {
   }
 
   renderSyncBar();
+}
+
+function isSmallShop() {
+  return state.shopMode === "small";
+}
+
+function isHiddenByShopMode(item) {
+  return isSmallShop() && !item.small_shop;
+}
+
+// Items created during a small shop are flagged so they stay visible in that mode.
+function stampShopMode(item) {
+  if (isSmallShop()) item.small_shop = true;
+}
+
+// Adding something already on the (hidden) big-shop list brings it into view
+// rather than reporting a duplicate the user cannot see.
+function promoteHiddenDuplicate(key) {
+  if (!isSmallShop()) return false;
+  const hidden = state.items.find(
+    (i) => !i.deleted_at && !i.checked && !i.small_shop && canonicalNameKey(i.name) === key
+  );
+  if (!hidden) return false;
+  hidden.small_shop = true;
+  hidden.updated_at = new Date().toISOString();
+  hidden.updated_by = currentUserId;
+  enqueue("upsert", hidden).catch(() => {});
+  return true;
+}
+
+function renderShopModeBanner(hiddenCount) {
+  const small = isSmallShop();
+  el.shopModeBanner.hidden = !small;
+  el.shopModeBtn.textContent = small ? "Switch to Big Shop" : "Switch to Small Shop";
+  if (!small) return;
+  el.shopModeText.textContent = hiddenCount
+    ? `Small shop · ${hiddenCount} big shop item${hiddenCount === 1 ? "" : "s"} hidden`
+    : "Small shop";
+}
+
+async function setShopMode(mode) {
+  if (state.shopMode === mode) return;
+  const nowIso = new Date().toISOString();
+  if (mode === "small") {
+    // Anything flagged by an earlier small shop belongs to the big list again.
+    for (const item of state.items) {
+      if (!item.small_shop || item.deleted_at || item.checked) continue;
+      item.small_shop = false;
+      item.updated_at = nowIso;
+      item.updated_by = currentUserId;
+      await enqueue("upsert", item);
+    }
+  }
+  state.shopMode = mode;
+  state.shopModeUpdatedAt = nowIso;
+  await enqueue(
+    "upsert",
+    { id: APP_CONFIG.householdId, household_id: APP_CONFIG.householdId, shop_mode: mode, updated_at: nowIso, updated_by: currentUserId },
+    "list_settings"
+  );
+  render();
+  syncNow();
+  showInfoToast(mode === "small" ? "Small shop: big shop items hidden" : "Big shop: showing everything");
+}
+
+async function syncSettingsFromRemote() {
+  const { data, error } = await apiSelect("list_settings", {
+    columns: "*",
+    eq: { id: APP_CONFIG.householdId }
+  });
+  // Missing table / no row yet: stay on the local value rather than failing sync.
+  if (error || !data?.length) return;
+  if (state.pending.some((op) => op.table === "list_settings")) return;
+  const remote = data[0];
+  const remoteTs = Date.parse(remote.updated_at || 0) || 0;
+  const localTs = Date.parse(state.shopModeUpdatedAt || 0) || 0;
+  if (remoteTs <= localTs || (remote.shop_mode !== "small" && remote.shop_mode !== "big")) return;
+  state.shopMode = remote.shop_mode;
+  state.shopModeUpdatedAt = remote.updated_at;
+  await persistLocal();
 }
 
 function itemRow(item) {
@@ -1399,7 +1515,7 @@ async function addMealToList(mealId) {
     const key = canonicalNameKey(name);
     if (!name || !key) continue;
     if (active.has(key)) {
-      skipped += 1;
+      if (!promoteHiddenDuplicate(key)) skipped += 1;
       continue;
     }
     const section = normalizeSection(mealItem.section)
@@ -1416,6 +1532,7 @@ async function addMealToList(mealId) {
       deleted_at: null,
       updated_at: new Date().toISOString()
     };
+    stampShopMode(item);
     state.items.push(item);
     active.add(key);
     added += 1;
@@ -1897,6 +2014,12 @@ async function syncNow() {
     const table = inferPendingTable(op);
     op.table = table;
     const { error } = await apiUpsert(table, op.payload);
+    if (error && table === "list_settings") {
+      // Don't let an unmigrated settings table block item sync; the mode still
+      // works locally and re-queues on the next toggle.
+      state.pending.splice(opIndex, 1);
+      continue;
+    }
     if (error) {
       state.lastSyncError = `sync failed: ${error.message}`;
       break;
@@ -1929,6 +2052,7 @@ async function syncNow() {
   if (!error) {
     await syncSuggestionsFromRemote();
     await syncMealsFromRemote();
+    await syncSettingsFromRemote();
   }
 
   state.syncing = false;
@@ -1947,6 +2071,7 @@ function findNextPendingIndex() {
 
 function inferPendingTable(op) {
   const payload = op?.payload || {};
+  if (op?.table === "list_settings") return "list_settings";
   if (op?.table === "shopping_items" || op?.table === "suggestion_items" || op?.table === "meals" || op?.table === "meal_items") {
     // Guard against old malformed queued ops that were written to shopping_items.
     if (op.table === "shopping_items" && payload?.meal_id) return "meal_items";
@@ -2280,7 +2405,11 @@ async function addFavouritesToList() {
 
   for (const s of favourites) {
     const key = canonicalNameKey(s.name);
-    if (!key || active.has(key)) continue;
+    if (!key) continue;
+    if (active.has(key)) {
+      if (promoteHiddenDuplicate(key)) lastAddedId = lastAddedId || "promoted";
+      continue;
+    }
 
     const item = {
       id: crypto.randomUUID(),
@@ -2292,6 +2421,7 @@ async function addFavouritesToList() {
       deleted_at: null,
       updated_at: new Date().toISOString()
     };
+    stampShopMode(item);
 
     state.items.push(item);
     active.add(key);
@@ -2300,14 +2430,14 @@ async function addFavouritesToList() {
   }
 
   if (lastAddedId) {
-    captureUndo("add", { id: lastAddedId });
+    if (lastAddedId !== "promoted") captureUndo("add", { id: lastAddedId });
     render();
     syncNow();
   }
 }
 
 async function checkAllActiveItems() {
-  const activeItems = state.items.filter((i) => !i.deleted_at && !i.checked);
+  const activeItems = state.items.filter((i) => !i.deleted_at && !i.checked && !isHiddenByShopMode(i));
   if (!activeItems.length) {
     showInfoToast("No active items to check");
     return;
@@ -2495,6 +2625,11 @@ async function loadLocal() {
   state.pending = (await idbGet(db, "state", "pending")) || [];
   state.meals = (await idbGet(db, "state", "meals")) || [];
   state.mealItems = (await idbGet(db, "state", "mealItems")) || [];
+  const settings = await idbGet(db, "state", "settings");
+  if (settings?.shopMode === "small" || settings?.shopMode === "big") {
+    state.shopMode = settings.shopMode;
+    state.shopModeUpdatedAt = settings.shopModeUpdatedAt || null;
+  }
   rebuildSuggestionIndex();
 }
 
@@ -2505,6 +2640,7 @@ async function persistLocal() {
   await idbSet(db, "state", "pending", state.pending);
   await idbSet(db, "state", "meals", state.meals);
   await idbSet(db, "state", "mealItems", state.mealItems);
+  await idbSet(db, "state", "settings", { shopMode: state.shopMode, shopModeUpdatedAt: state.shopModeUpdatedAt });
 }
 
 async function apiUpsert(table, payload) {

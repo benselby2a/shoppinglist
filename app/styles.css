@@ -1058,3 +1058,28 @@ body.add-panel-collapsed .options-fab-btn {
     height: 48px;
   }
 }
+
+.shop-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.9rem;
+}
+.shop-mode-banner[hidden] {
+  display: none !important;
+}
+.shop-mode-banner button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
