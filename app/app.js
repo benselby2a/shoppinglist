@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v143";
+const APP_VERSION = "v144";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -128,7 +128,6 @@ const el = {
   shopSwitchText: document.getElementById("shop-switch-text"),
   shopSwitchMoveBtn: document.getElementById("shop-switch-move-btn"),
   shopSwitchKeepBtn: document.getElementById("shop-switch-keep-btn"),
-  shopSwitchStayBtn: document.getElementById("shop-switch-stay-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
   manageMealsBtn: document.getElementById("manage-meals-btn"),
 
@@ -351,7 +350,6 @@ function bindEvents() {
   el.shopModeBtn.addEventListener("click", onShopModeToggle);
   el.shopSwitchMoveBtn.addEventListener("click", () => finishSwitchToBig(true));
   el.shopSwitchKeepBtn.addEventListener("click", () => finishSwitchToBig(false));
-  el.shopSwitchStayBtn.addEventListener("click", () => el.shopSwitchModal.classList.remove("is-open"));
   el.shopModeSwitchBtn.addEventListener("click", onShopModeToggle);
   el.checkAllBtn.addEventListener("click", async () => {
     await checkAllActiveItems();
@@ -696,8 +694,9 @@ async function setShopMode(mode) {
     if (added) {
       // Ask what should happen to the items added during the small shop.
       const plural = added === 1 ? "" : "s";
-      el.shopSwitchText.textContent = `You added ${added} item${plural} during this small shop. Move ${added === 1 ? "it" : "them"} onto the big shop list, or keep ${added === 1 ? "it" : "them"} for small shops only?`;
+      el.shopSwitchText.textContent = `You added ${added} item${plural} during this small shop. Keep ${added === 1 ? "it" : "them"} for small shops only, or move ${added === 1 ? "it" : "them"} onto the big shop list?`;
       el.shopSwitchModal.classList.add("is-open");
+      el.shopSwitchKeepBtn.focus();
       return;
     }
   }
