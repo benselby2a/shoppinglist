@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v144";
+const APP_VERSION = "v145";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -124,10 +124,6 @@ const el = {
   shopModeBanner: document.getElementById("shop-mode-banner"),
   shopModeText: document.getElementById("shop-mode-text"),
   shopModeSwitchBtn: document.getElementById("shop-mode-switch-btn"),
-  shopSwitchModal: document.getElementById("shop-switch-modal"),
-  shopSwitchText: document.getElementById("shop-switch-text"),
-  shopSwitchMoveBtn: document.getElementById("shop-switch-move-btn"),
-  shopSwitchKeepBtn: document.getElementById("shop-switch-keep-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
   manageMealsBtn: document.getElementById("manage-meals-btn"),
 
@@ -348,8 +344,6 @@ function bindEvents() {
     document.body.classList.remove("options-menu-open");
   };
   el.shopModeBtn.addEventListener("click", onShopModeToggle);
-  el.shopSwitchMoveBtn.addEventListener("click", () => finishSwitchToBig(true));
-  el.shopSwitchKeepBtn.addEventListener("click", () => finishSwitchToBig(false));
   el.shopModeSwitchBtn.addEventListener("click", onShopModeToggle);
   el.checkAllBtn.addEventListener("click", async () => {
     await checkAllActiveItems();
@@ -687,35 +681,11 @@ function renderShopModeBanner(hiddenCount) {
   el.shopModeSwitchBtn.textContent = small ? "Back to big shop" : "Small shop";
 }
 
+// Items added during a small shop always stay on the small list; the item menu
+// can move them to the big shop individually.
 async function setShopMode(mode) {
   if (state.shopMode === mode) return;
-  if (mode === "big") {
-    const added = state.items.filter((i) => !i.deleted_at && !i.checked && i.small_shop).length;
-    if (added) {
-      // Ask what should happen to the items added during the small shop.
-      const plural = added === 1 ? "" : "s";
-      el.shopSwitchText.textContent = `You added ${added} item${plural} during this small shop. Keep ${added === 1 ? "it" : "them"} for small shops only, or move ${added === 1 ? "it" : "them"} onto the big shop list?`;
-      el.shopSwitchModal.classList.add("is-open");
-      el.shopSwitchKeepBtn.focus();
-      return;
-    }
-  }
   await applyShopMode(mode);
-}
-
-async function finishSwitchToBig(moveToBig) {
-  el.shopSwitchModal.classList.remove("is-open");
-  if (moveToBig) {
-    const nowIso = new Date().toISOString();
-    for (const item of state.items) {
-      if (!item.small_shop || item.deleted_at || item.checked) continue;
-      item.small_shop = false;
-      item.updated_at = nowIso;
-      item.updated_by = currentUserId;
-      await enqueue("upsert", item);
-    }
-  }
-  await applyShopMode("big");
 }
 
 async function applyShopMode(mode) {
