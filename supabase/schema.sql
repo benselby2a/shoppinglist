@@ -71,7 +71,16 @@ create index if not exists meal_items_meal_sort_idx
 create index if not exists meal_items_household_name_idx
   on public.meal_items(household_id, lower(name));
 
+create table if not exists public.list_settings (
+  id text primary key,
+  household_id text not null,
+  shop_mode text not null default 'big' check (shop_mode in ('big', 'small')),
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
 alter table public.shopping_items enable row level security;
+alter table public.list_settings enable row level security;
 alter table public.suggestion_items enable row level security;
 alter table public.meals enable row level security;
 alter table public.meal_items enable row level security;
@@ -136,6 +145,21 @@ create policy "household read meal items"
 drop policy if exists "household write meal items" on public.meal_items;
 create policy "household write meal items"
   on public.meal_items
+  for all
+  to authenticated
+  using (household_id = 'shared-household')
+  with check (household_id = 'shared-household');
+
+drop policy if exists "household read settings" on public.list_settings;
+create policy "household read settings"
+  on public.list_settings
+  for select
+  to authenticated
+  using (household_id = 'shared-household');
+
+drop policy if exists "household write settings" on public.list_settings;
+create policy "household write settings"
+  on public.list_settings
   for all
   to authenticated
   using (household_id = 'shared-household')
