@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v146";
+const APP_VERSION = "v147";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -122,6 +122,7 @@ const el = {
   checkAllBtn: document.getElementById("check-all-btn"),
   shopModeBtn: document.getElementById("shop-mode-btn"),
   shopModeBanner: document.getElementById("shop-mode-banner"),
+  addOtherShopBtn: document.getElementById("add-other-shop-btn"),
   shopModeText: document.getElementById("shop-mode-text"),
   shopModeSwitchBtn: document.getElementById("shop-mode-switch-btn"),
   addFavouritesBtn: document.getElementById("add-favourites-btn"),
@@ -312,7 +313,15 @@ function bindEvents() {
     document.body.classList.remove("options-menu-open");
   });
 
-  el.addForm.addEventListener("submit", onAddItemSubmit);
+  el.addForm.addEventListener("submit", (e) => onAddItemSubmit(e));
+  el.addOtherShopBtn.addEventListener("click", (e) => {
+    // A type="button" skips native required-field validation, so check here.
+    if (!el.itemName.value.trim()) {
+      el.itemName.focus();
+      return;
+    }
+    onAddItemSubmit(e, true);
+  });
   el.addForm.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter" || ev.isComposing) return;
     if (state.addMode !== "item") return;
@@ -554,19 +563,21 @@ function guardPasscode() {
   localStorage.setItem("shopping_list_passcode_ok", APP_CONFIG.passcode);
 }
 
-async function onAddItemSubmit(e) {
+// otherShop adds to the list that is not currently shown (small from big, big from small).
+async function onAddItemSubmit(e, otherShop = false) {
   e.preventDefault();
+  const toSmall = otherShop ? !isSmallShop() : isSmallShop();
   const rawName = normalizeItemName(el.itemName.value);
   const name = autoCorrectItemName(rawName);
   if (!name) return;
   if (isActiveDuplicateName(name)) {
-    if (promoteHiddenDuplicate(canonicalNameKey(name))) {
+    if (promoteDuplicate(canonicalNameKey(name), toSmall)) {
       el.addForm.reset();
       hideSuggestions();
       setAddCardCollapsed(true);
       render();
       syncNow();
-      showInfoToast(`Added ${name} to the ${isSmallShop() ? "small" : "big"} shop`);
+      showInfoToast(`Added ${name} to the ${toSmall ? "small" : "big"} shop`);
       return;
     }
     showDuplicateToast(name);
@@ -584,11 +595,12 @@ async function onAddItemSubmit(e) {
     updated_at: new Date().toISOString(),
     updated_by: currentUserId
   };
-  stampShopMode(item);
+  if (toSmall) item.small_shop = true;
 
   state.items.push(item);
   captureUndo("add", { id: item.id, name: item.name });
   render();
+  if (otherShop) showInfoToast(`Added ${name} to the ${toSmall ? "small" : "big"} shop`);
   enqueue("upsert", item).catch(() => {});
   upsertSuggestion(name, item.section).catch(() => {});
 
@@ -656,12 +668,12 @@ function stampShopMode(item) {
 
 // Adding something already on the other (hidden) list brings it into view
 // rather than reporting a duplicate the user cannot see.
-function promoteHiddenDuplicate(key) {
+function promoteDuplicate(key, toSmall = isSmallShop()) {
   const hidden = state.items.find(
-    (i) => !i.deleted_at && !i.checked && isHiddenByShopMode(i) && canonicalNameKey(i.name) === key
+    (i) => !i.deleted_at && !i.checked && Boolean(i.small_shop) !== toSmall && canonicalNameKey(i.name) === key
   );
   if (!hidden) return false;
-  hidden.small_shop = isSmallShop();
+  hidden.small_shop = toSmall;
   hidden.updated_at = new Date().toISOString();
   hidden.updated_by = currentUserId;
   enqueue("upsert", hidden).catch(() => {});
@@ -671,6 +683,9 @@ function promoteHiddenDuplicate(key) {
 function renderShopModeBanner(hiddenCount) {
   const small = isSmallShop();
   el.shopModeBtn.textContent = small ? "Switch to Big Shop" : "Switch to Small Shop";
+  el.addOtherShopBtn.textContent = small ? "＋B" : "＋S";
+  el.addOtherShopBtn.title = small ? "Add to big shop" : "Add to small shop";
+  el.addOtherShopBtn.setAttribute("aria-label", el.addOtherShopBtn.title);
   // Nothing to set aside when the big list is empty; always allow leaving small shop.
   const hasActiveItems = state.items.some((i) => !i.deleted_at && !i.checked);
   el.shopModeBtn.hidden = !small && !hasActiveItems;
@@ -1535,7 +1550,7 @@ async function addMealToList(mealId) {
     const key = canonicalNameKey(name);
     if (!name || !key) continue;
     if (active.has(key)) {
-      if (!promoteHiddenDuplicate(key)) skipped += 1;
+      if (!promoteDuplicate(key)) skipped += 1;
       continue;
     }
     const section = normalizeSection(mealItem.section)
@@ -2427,7 +2442,7 @@ async function addFavouritesToList() {
     const key = canonicalNameKey(s.name);
     if (!key) continue;
     if (active.has(key)) {
-      if (promoteHiddenDuplicate(key)) lastAddedId = lastAddedId || "promoted";
+      if (promoteDuplicate(key)) lastAddedId = lastAddedId || "promoted";
       continue;
     }
 

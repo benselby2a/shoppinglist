@@ -1087,3 +1087,14 @@ body.add-panel-collapsed .options-fab-btn {
 #shop-mode-btn[hidden] {
   display: none !important;
 }
+
+.add-submit-row {
+  display: grid;
+  grid-template-columns: 1fr 4fr;
+  gap: 8px;
+}
+.add-other-shop-btn {
+  padding-left: 0;
+  padding-right: 0;
+  min-width: 0;
+}
