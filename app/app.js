@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v147";
+const APP_VERSION = "v148";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -694,9 +694,9 @@ function renderShopModeBanner(hiddenCount) {
   if (el.shopModeBanner.hidden) return;
   const plural = hiddenCount === 1 ? "" : "s";
   el.shopModeText.textContent = small
-    ? (hiddenCount ? `Small shop · ${hiddenCount} big shop item${plural} hidden` : "Small shop")
+    ? (hiddenCount ? `Small shop · ${hiddenCount} hidden` : "Small shop")
     : `${hiddenCount} small shop item${plural} hidden`;
-  el.shopModeSwitchBtn.textContent = small ? "Back to big shop" : "Small shop";
+  el.shopModeSwitchBtn.textContent = small ? "Big shop" : "Small shop";
 }
 
 // Items added during a small shop always stay on the small list; the item menu

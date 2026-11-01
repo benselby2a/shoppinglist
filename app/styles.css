@@ -1098,3 +1098,21 @@ body.add-panel-collapsed .options-fab-btn {
   padding-right: 0;
   min-width: 0;
 }
+
+.shop-mode-banner {
+  padding: 4px 10px;
+  min-height: 0;
+  line-height: 1.2;
+}
+.shop-mode-banner span {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shop-mode-banner button {
+  flex: 0 0 auto;
+  padding: 3px 12px;
+  white-space: nowrap;
+}
