@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v148";
+const APP_VERSION = "v149";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -69,6 +69,7 @@ const SECTION_KEYWORDS = {
 };
 
 const ADD_CARD_COLLAPSED_KEY = "shopping_list_add_card_collapsed";
+const SHOP_HINT_SEEN_KEY = "shopping_list_shop_hint_seen";
 
 const state = {
   items: [],
@@ -122,6 +123,8 @@ const el = {
   checkAllBtn: document.getElementById("check-all-btn"),
   shopModeBtn: document.getElementById("shop-mode-btn"),
   shopModeBanner: document.getElementById("shop-mode-banner"),
+  shopHintModal: document.getElementById("shop-hint-modal"),
+  shopHintOkBtn: document.getElementById("shop-hint-ok-btn"),
   addOtherShopBtn: document.getElementById("add-other-shop-btn"),
   shopModeText: document.getElementById("shop-mode-text"),
   shopModeSwitchBtn: document.getElementById("shop-mode-switch-btn"),
@@ -221,6 +224,25 @@ async function initApp() {
   });
 
   initServiceWorkerReleaseFlow();
+  showShopHintOnce();
+}
+
+// One-off intro to the ＋S / ＋B quick-add button; remembered per device.
+function showShopHintOnce() {
+  try {
+    if (localStorage.getItem(SHOP_HINT_SEEN_KEY)) return;
+  } catch {
+    return;
+  }
+  el.shopHintModal.classList.add("is-open");
+  el.shopHintOkBtn.addEventListener("click", () => {
+    el.shopHintModal.classList.remove("is-open");
+    try {
+      localStorage.setItem(SHOP_HINT_SEEN_KEY, "1");
+    } catch {
+      /* storage unavailable: hint may show again next launch */
+    }
+  }, { once: true });
 }
 
 async function init() {

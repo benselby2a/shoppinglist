@@ -1116,3 +1116,15 @@ body.add-panel-collapsed .options-fab-btn {
   padding: 3px 12px;
   white-space: nowrap;
 }
+
+.shop-hint-content {
+  width: min(340px, 86vw);
+}
+.shop-hint-content h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+.shop-hint-content p {
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
