@@ -32,7 +32,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v149";
+const APP_VERSION = "v150";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -113,6 +113,12 @@ const el = {
   addMealPane: document.getElementById("add-meal-pane"),
   addMealList: document.getElementById("add-meal-list"),
   addSelectedMealBtn: document.getElementById("add-selected-meal-btn"),
+  addMealCalendarBtn: document.getElementById("add-meal-calendar-btn"),
+  mealCalendarModal: document.getElementById("meal-calendar-modal"),
+  mealCalendarTitle: document.getElementById("meal-calendar-title"),
+  mealCalendarDate: document.getElementById("meal-calendar-date"),
+  mealCalendarAddBtn: document.getElementById("meal-calendar-add-btn"),
+  mealCalendarCancelBtn: document.getElementById("meal-calendar-cancel-btn"),
   optionsFabBtn: document.getElementById("options-fab-btn"),
   optionsMenu: document.getElementById("options-menu"),
   itemName: document.getElementById("item-entry"),
@@ -389,6 +395,9 @@ function bindEvents() {
   });
   el.addModeItemBtn.addEventListener("click", () => setAddMode("item"));
   el.addModeMealBtn.addEventListener("click", () => setAddMode("meal"));
+  el.addMealCalendarBtn.addEventListener("click", openMealCalendarModal);
+  el.mealCalendarCancelBtn.addEventListener("click", () => el.mealCalendarModal.classList.remove("is-open"));
+  el.mealCalendarAddBtn.addEventListener("click", addSelectedMealToCalendar);
   el.addSelectedMealBtn.addEventListener("click", async () => {
     if (!state.selectedAddMealId) return;
     await addMealToList(state.selectedAddMealId);
@@ -1124,9 +1133,81 @@ function renderAddMealList() {
 function updateAddMealSubmitButton() {
   const selectedMeal = state.meals.find((m) => m.id === state.selectedAddMealId);
   el.addSelectedMealBtn.disabled = !selectedMeal;
+  el.addMealCalendarBtn.disabled = !selectedMeal;
   el.addSelectedMealBtn.textContent = selectedMeal
     ? `Add Items for ${selectedMeal.name} to List`
     : "Add meal items to list";
+}
+
+function openMealCalendarModal() {
+  const meal = state.meals.find((m) => m.id === state.selectedAddMealId);
+  if (!meal) return;
+  el.mealCalendarTitle.textContent = meal.name;
+  if (!el.mealCalendarDate.value) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    el.mealCalendarDate.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
+  el.mealCalendarModal.classList.add("is-open");
+}
+
+function icsEscape(text) {
+  return String(text).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+
+// Builds an all-day VEVENT; DTEND is exclusive, so it is the following day.
+function buildMealIcs(meal, isoDate) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const compact = (dt) => dt.toISOString().slice(0, 10).replaceAll("-", "");
+  const start = new Date(Date.UTC(y, m - 1, d));
+  const end = new Date(Date.UTC(y, m - 1, d + 1));
+  const items = state.mealItems
+    .filter((x) => x.meal_id === meal.id)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map((x) => x.name);
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//MSL//Meals//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${crypto.randomUUID()}@msl`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "")}`,
+    `DTSTART;VALUE=DATE:${compact(start)}`,
+    `DTEND;VALUE=DATE:${compact(end)}`,
+    `SUMMARY:${icsEscape(meal.name)}`
+  ];
+  if (items.length) lines.push(`DESCRIPTION:${icsEscape(`Ingredients: ${items.join(", ")}`)}`);
+  lines.push("TRANSP:TRANSPARENT", "END:VEVENT", "END:VCALENDAR");
+  return lines.join("\r\n") + "\r\n";
+}
+
+// iOS cannot write to Calendar from a web app, so hand it an .ics via the share
+// sheet (or a download fallback); the user confirms with "Add to Calendar".
+async function addSelectedMealToCalendar() {
+  const meal = state.meals.find((m) => m.id === state.selectedAddMealId);
+  const isoDate = el.mealCalendarDate.value;
+  if (!meal || !isoDate) return;
+  const file = new File([buildMealIcs(meal, isoDate)], `${meal.name.replace(/[^\w-]+/g, "_") || "meal"}.ics`, { type: "text/calendar" });
+  el.mealCalendarModal.classList.remove("is-open");
+
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: meal.name });
+      return;
+    }
+  } catch (err) {
+    if (err?.name === "AbortError") return;
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 function openMealEditor() {
