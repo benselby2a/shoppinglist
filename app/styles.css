@@ -1211,3 +1211,12 @@ body.add-panel-collapsed .options-fab-btn {
   font-size: 0.9rem;
   color: var(--muted);
 }
+
+a.wizard-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  min-height: 44px;
+  padding: 0 16px;
+}
