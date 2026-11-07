@@ -103,6 +103,7 @@
         <div id="options-menu" class="options-menu" hidden>
           <button id="top-undo-btn" class="icon-btn" type="button" aria-label="Undo last action" disabled>Undo</button>
           <button id="shop-mode-btn" class="icon-btn" type="button">Switch to Small Shop</button>
+          <button id="wizard-btn" class="icon-btn" type="button">Plan Weekly Shop</button>
           <button id="check-all-btn" class="icon-btn" type="button">Check All Items</button>
           <button id="add-favourites-btn" class="icon-btn" type="button">Add Favourite Items</button>
           <button id="manage-meals-btn" class="icon-btn" type="button">Manage Meals</button>
@@ -156,6 +157,21 @@
         <p>Tap <strong>＋S</strong> next to Add Item to add something straight to your small shop list. While you're in small shop mode it becomes <strong>＋B</strong> and adds to the big shop instead.</p>
         <div class="db-actions">
           <button id="shop-hint-ok-btn" class="icon-btn" type="button">Got it</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wizard-modal" class="modal">
+      <div class="modal-content wizard-content">
+        <div class="modal-header">
+          <h2>Plan Weekly Shop</h2>
+          <button id="wizard-close-btn" class="icon-btn" type="button" aria-label="Close">✕</button>
+        </div>
+        <p id="wizard-progress" class="wizard-hint"></p>
+        <div id="wizard-body" class="wizard-body"></div>
+        <div class="db-actions">
+          <button id="wizard-back-btn" class="icon-btn" type="button">Back</button>
+          <button id="wizard-next-btn" class="icon-btn wizard-next" type="button">Next</button>
         </div>
       </div>
     </div>
