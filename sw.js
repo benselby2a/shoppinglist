@@ -1,4 +1,6 @@
-const CACHE_VERSION = "msl-shell-v158";
+const CACHE_VERSION = "msl-shell-v159";
+// Holds the meal-plan .ics the wizard generates (see app/wizard.js); kept across releases.
+const CALENDAR_CACHE = "msl-calendar";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
@@ -29,7 +31,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.map((k) => (k === CACHE_VERSION ? Promise.resolve() : caches.delete(k))));
+      await Promise.all(keys.map((k) => (k === CACHE_VERSION || k === CALENDAR_CACHE ? Promise.resolve() : caches.delete(k))));
       await self.clients.claim();
     })()
   );
@@ -52,6 +54,17 @@ self.addEventListener("fetch", (event) => {
 
   // Never cache Supabase API responses here; let app-level sync own data flow.
   if (!isSameOrigin || relPath.startsWith("/rest/v1/") || relPath.startsWith("/realtime/")) {
+    return;
+  }
+
+  // Serve the wizard's generated calendar as a real file download.
+  if (relPath === "/__calendar/meals.ics") {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CALENDAR_CACHE);
+        return (await cache.match(event.request, { ignoreSearch: true })) || new Response("Not found", { status: 404 });
+      })()
+    );
     return;
   }
 
