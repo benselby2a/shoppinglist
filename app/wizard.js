@@ -73,19 +73,50 @@ export function buildMealsIcs(events) {
   return lines.join("\r\n") + "\r\n";
 }
 
-// A web app cannot write to Calendar directly, so offer the .ics two ways and let the
-// browser take whichever it supports. Opening the file brings up the system
-// "Add to Calendar" prompt.
-//  - Download: an anchor with a data: URL (Safari ignores programmatic and blob downloads)
-//  - Share: the native share sheet with the file attached, where the browser supports it
+// A web app cannot write to Calendar directly, so offer the .ics as a download; opening
+// it brings up the system "Add to Calendar" prompt.
+//
+// Safari ignores blob:/data: downloads, so the file is also stored under a virtual address
+// that the service worker (sw.js) answers with a real "Content-Disposition: attachment"
+// response, which every browser treats as a normal download. The data: link is only the
+// fallback for when the service worker isn't in control yet.
+const CALENDAR_CACHE = "msl-calendar";
+const CALENDAR_PATH = "./__calendar/meals.ics";
+
+async function publishIcs(icsText) {
+  try {
+    if (!("caches" in window) || !navigator.serviceWorker?.controller) return null;
+    const url = new URL(`${CALENDAR_PATH}?v=${Date.now()}`, document.baseURI).toString();
+    const cache = await caches.open(CALENDAR_CACHE);
+    await cache.put(url, new Response(icsText, {
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="meals.ics"'
+      }
+    }));
+    // An older service worker won't know the address; only use it if it really answers.
+    const check = await fetch(url, { cache: "no-store" });
+    return check.ok && check.headers.get("Content-Disposition") ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function icsActions(icsText, filename = "meals.ics") {
   const wrap = h("div", { class: "wizard-ics-actions" });
-  wrap.append(h("a", {
+  const link = h("a", {
     class: "icon-btn wizard-link",
     href: `data:text/calendar;charset=utf-8,${encodeURIComponent(icsText)}`,
     download: filename,
     text: "Download"
-  }));
+  });
+  wrap.append(link);
+  publishIcs(icsText).then((url) => {
+    if (!url) return;
+    // The response is already an attachment; a download attribute only gets in the way.
+    link.removeAttribute("download");
+    link.href = url;
+  });
   const file = new File([icsText], filename, { type: "text/calendar" });
   if (navigator.canShare?.({ files: [file] })) {
     wrap.append(h("button", {
