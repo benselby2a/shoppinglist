@@ -108,7 +108,7 @@ function icsActions(icsText, filename = "meals.ics") {
     class: "icon-btn wizard-link",
     href: `data:text/calendar;charset=utf-8,${encodeURIComponent(icsText)}`,
     download: filename,
-    text: "Download"
+    text: "Add meals to calendar"
   });
   wrap.append(link);
   publishIcs(icsText).then((url) => {
@@ -117,15 +117,6 @@ function icsActions(icsText, filename = "meals.ics") {
     link.removeAttribute("download");
     link.href = url;
   });
-  const file = new File([icsText], filename, { type: "text/calendar" });
-  if (navigator.canShare?.({ files: [file] })) {
-    wrap.append(h("button", {
-      type: "button",
-      class: "icon-btn wizard-link",
-      text: "Share…",
-      onclick: () => navigator.share({ files: [file], title: "Meal plan" }).catch(() => {})
-    }));
-  }
   return wrap;
 }
 
@@ -213,7 +204,7 @@ export function createWizard(ctx) {
     );
     if (ics) {
       root.body.append(
-        h("p", { class: "wizard-hint", text: "Your meal calendar is ready. Download it (or share it), then open the file to add the events." }),
+        h("p", { class: "wizard-hint", text: "Your meal calendar is ready. Tap below to download it, then open the file to add the events." }),
         icsActions(ics)
       );
     }
