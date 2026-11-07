@@ -1,3 +1,5 @@
+import { createWizard, mergeQuantity, quantityForNew } from "./wizard.js";
+
 const APP_CONFIG = {
   supabaseUrl: "https://cnkznpkvwoqxaiywwmhr.supabase.co",
   supabaseAnonKey: "sb_publishable_xlNQ_QudJNUlMLjWpr0iJA_YgO87tox",
@@ -32,7 +34,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v151";
+const APP_VERSION = "v152";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -122,6 +124,7 @@ const el = {
   topUndoBtn: document.getElementById("top-undo-btn"),
   checkAllBtn: document.getElementById("check-all-btn"),
   shopModeBtn: document.getElementById("shop-mode-btn"),
+  wizardBtn: document.getElementById("wizard-btn"),
   shopModeBanner: document.getElementById("shop-mode-banner"),
   shopHintModal: document.getElementById("shop-hint-modal"),
   shopHintOkBtn: document.getElementById("shop-hint-ok-btn"),
@@ -375,6 +378,11 @@ function bindEvents() {
     document.body.classList.remove("options-menu-open");
   };
   el.shopModeBtn.addEventListener("click", onShopModeToggle);
+  el.wizardBtn.addEventListener("click", () => {
+    getWeeklyWizard().open();
+    el.optionsMenu.hidden = true;
+    document.body.classList.remove("options-menu-open");
+  });
   el.shopModeSwitchBtn.addEventListener("click", onShopModeToggle);
   el.checkAllBtn.addEventListener("click", async () => {
     await checkAllActiveItems();
@@ -2448,6 +2456,100 @@ async function renameDatabaseEntry(currentName, nextNameInput) {
 
   rebuildSuggestionIndex();
   await persistLocal();
+}
+
+let weeklyWizard = null;
+function getWeeklyWizard() {
+  if (weeklyWizard) return weeklyWizard;
+  weeklyWizard = createWizard({
+    keyOf: canonicalNameKey,
+    normalizeName: normalizeItemName,
+    guessSection: (q) => guessSection(q),
+    getMeals: () => [...state.meals].sort((a, b) => (a.name || "").localeCompare(b.name || "")),
+    getMealItems: (mealId) => state.mealItems
+      .filter((x) => x.meal_id === mealId)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+    getFavourites: () => state.suggestions
+      .filter((s) => s.favourite)
+      .map((s) => ({ name: s.name, section: s.section || "" }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    isOnList: (name) => getActiveUncheckedNameKeys().has(canonicalNameKey(name)),
+    toast: showInfoToast,
+    createMeal: createMealFromWizard,
+    addToList: addWizardRowsToList
+  });
+  return weeklyWizard;
+}
+
+async function createMealFromWizard(name, items) {
+  const mealName = normalizeItemName(name);
+  if (!mealName || state.meals.some((m) => canonicalNameKey(m.name) === canonicalNameKey(mealName))) return;
+  const meal = {
+    id: crypto.randomUUID(),
+    household_id: APP_CONFIG.householdId,
+    name: mealName,
+    updated_at: new Date().toISOString()
+  };
+  state.meals.push(meal);
+  const mealItems = items.map((item, idx) => ({
+    id: crypto.randomUUID(),
+    meal_id: meal.id,
+    household_id: APP_CONFIG.householdId,
+    name: normalizeItemName(item.name),
+    section: normalizeSection(item.section) || "",
+    sort_order: idx,
+    updated_at: new Date().toISOString()
+  }));
+  await replaceMealItems(meal.id, mealItems);
+  await enqueue("upsert", meal, "meals");
+  await persistLocal();
+  renderMealEditorList();
+  renderAddMealList();
+}
+
+// rows: [{ key, name, section, count }]. New ingredients are added to the big shop list;
+// ones already on the list have their quantity bumped by how many times they are needed.
+async function addWizardRowsToList(rows) {
+  let added = 0;
+  let updated = 0;
+  const nowIso = new Date().toISOString();
+  for (const row of rows) {
+    const existing = state.items.find((i) => !i.deleted_at && !i.checked && canonicalNameKey(i.name) === row.key);
+    if (existing) {
+      const next = mergeQuantity(existing.quantity_text, row.count);
+      if (next !== (existing.quantity_text || "")) {
+        existing.quantity_text = next;
+        existing.updated_at = nowIso;
+        existing.updated_by = currentUserId;
+        await enqueue("upsert", existing);
+        updated += 1;
+      }
+      continue;
+    }
+    const name = normalizeItemName(row.name);
+    const section = normalizeSection(row.section)
+      || normalizeSection(state.suggestions.find((s) => canonicalNameKey(s.name) === row.key)?.section)
+      || guessSection(name.toLowerCase())
+      || SECTIONS[0];
+    const item = {
+      id: crypto.randomUUID(),
+      household_id: APP_CONFIG.householdId,
+      name,
+      section,
+      quantity_text: quantityForNew(row.count),
+      checked: false,
+      deleted_at: null,
+      updated_at: nowIso,
+      updated_by: currentUserId
+    };
+    state.items.push(item);
+    await enqueue("upsert", item);
+    await upsertSuggestion(name, section);
+    added += 1;
+  }
+  render();
+  syncNow();
+  return { added, updated };
 }
 
 async function addFavouritesToList() {
