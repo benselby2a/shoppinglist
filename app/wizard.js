@@ -73,18 +73,20 @@ export function buildMealsIcs(events) {
   return lines.join("\r\n") + "\r\n";
 }
 
-// A web app cannot write to Calendar directly, so download the .ics: opening it
-// brings up the system "Add to Calendar" prompt.
-export function downloadIcs(icsText, filename = "meals.ics") {
-  const file = new File([icsText], filename, { type: "text/calendar" });
-  const url = URL.createObjectURL(file);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+// A web app cannot write to Calendar directly, so offer the .ics as a real link: Safari
+// ignores programmatic downloads but honours a tap on an anchor, and opening the file
+// brings up the system "Add to Calendar" prompt. URLs are revoked when the wizard reopens.
+let linkUrls = [];
+
+function icsLink(icsText, label, filename = "meals.ics") {
+  const url = URL.createObjectURL(new Blob([icsText], { type: "text/calendar" }));
+  linkUrls.push(url);
+  return h("a", { class: "icon-btn wizard-link", href: url, download: filename, text: label });
+}
+
+function releaseLinks() {
+  for (const url of linkUrls) URL.revokeObjectURL(url);
+  linkUrls = [];
 }
 
 // The most recent calendar is kept on this device so it can be downloaded again.
@@ -139,7 +141,8 @@ export function createWizard(ctx) {
 
   function resetPlan() {
     days = planDays();
-    plan = { step: 0, selectedDays: new Set(), favs: new Map(), dayMeals: new Map(), calendar: true };
+    releaseLinks();
+    plan = { done: null, step: 0, selectedDays: new Set(), favs: new Map(), dayMeals: new Map(), calendar: true };
     for (const fav of ctx.getFavourites()) {
       plan.favs.set(ctx.keyOf(fav.name), { ...fav, selected: !ctx.isOnList(fav.name) });
     }
@@ -155,17 +158,38 @@ export function createWizard(ctx) {
   }
 
   function close(force = false) {
-    const touched = plan.selectedDays.size > 0 || [...plan.dayMeals.values()].some((m) => m.length);
+    const touched = !plan.done && plan.selectedDays.size > 0 || [...plan.dayMeals.values()].some((m) => m.length);
     if (!force && touched && !window.confirm("Discard this weekly plan?")) return;
     root.modal.classList.remove("is-open");
   }
 
+  function renderDone() {
+    const { added, updated, ics } = plan.done;
+    root.progress.textContent = "All done";
+    root.back.hidden = true;
+    root.next.textContent = "Done";
+    root.body.append(
+      h("h3", { text: "Added to your list" }),
+      h("p", { class: "wizard-hint", text: `${added} new item${added === 1 ? "" : "s"}${updated ? `, ${updated} updated` : ""}.` })
+    );
+    if (ics) {
+      root.body.append(
+        h("p", { class: "wizard-hint", text: "Tap below to download your meal calendar, then open the file to add the events." }),
+        icsLink(ics, "Download calendar")
+      );
+    }
+  }
+
   function render() {
+    root.body.innerHTML = "";
+    if (plan.done) {
+      renderDone();
+      return;
+    }
     const all = steps();
     if (plan.step >= all.length) plan.step = all.length - 1;
     const step = all[plan.step];
     root.progress.textContent = `Step ${plan.step + 1} of ${all.length}`;
-    root.body.innerHTML = "";
     root.back.hidden = plan.step === 0;
     root.next.textContent = step === "review" ? "Add to list" : "Next";
 
@@ -203,7 +227,7 @@ export function createWizard(ctx) {
       const when = new Date(last.savedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       root.body.append(h("div", { class: "wizard-last-calendar" },
         h("span", { text: `Last calendar: ${last.count} meal${last.count === 1 ? "" : "s"} · ${when}` }),
-        h("button", { type: "button", class: "icon-btn", text: "Download again", onclick: () => downloadIcs(last.ics) })
+        icsLink(last.ics, "Download again")
       ));
     }
   }
@@ -389,14 +413,14 @@ export function createWizard(ctx) {
       return;
     }
 
+    let ics = null;
     if (plan.calendar && meals.length) {
-      const ics = buildMealsIcs(meals.map(({ iso, meal }) => ({
+      ics = buildMealsIcs(meals.map(({ iso, meal }) => ({
         iso,
         name: meal.name,
         ingredients: meal.items.filter((i) => i.selected).map((i) => i.name)
       })));
       saveLastCalendar(ics, meals.length);
-      downloadIcs(ics);
     }
 
     root.next.disabled = true;
@@ -408,12 +432,19 @@ export function createWizard(ctx) {
     }
     const { added, updated } = await ctx.addToList(rows);
     root.next.disabled = false;
+    if (ics) {
+      // Stay open so the calendar can be downloaded with a real tap.
+      plan.done = { added, updated, ics };
+      render();
+      return;
+    }
     close(true);
     ctx.toast(`Added ${added} item${added === 1 ? "" : "s"}${updated ? `, updated ${updated}` : ""}`);
   }
 
   root.next.addEventListener("click", () => {
-    if (steps()[plan.step] === "review") finish();
+    if (plan.done) close(true);
+    else if (steps()[plan.step] === "review") finish();
     else { plan.step += 1; render(); }
   });
   root.back.addEventListener("click", () => { plan.step = Math.max(0, plan.step - 1); render(); });
