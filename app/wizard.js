@@ -73,18 +73,10 @@ export function buildMealsIcs(events) {
   return lines.join("\r\n") + "\r\n";
 }
 
-// iOS cannot write to Calendar from a web app, so hand it an .ics via the share
-// sheet (or a download fallback); the user confirms with "Add to Calendar".
-export async function shareIcs(icsText, filename = "meals.ics") {
+// A web app cannot write to Calendar directly, so download the .ics: opening it
+// brings up the system "Add to Calendar" prompt.
+export function downloadIcs(icsText, filename = "meals.ics") {
   const file = new File([icsText], filename, { type: "text/calendar" });
-  try {
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: "Meal plan" });
-      return;
-    }
-  } catch (err) {
-    if (err?.name === "AbortError") return;
-  }
   const url = URL.createObjectURL(file);
   const a = document.createElement("a");
   a.href = url;
@@ -93,6 +85,26 @@ export async function shareIcs(icsText, filename = "meals.ics") {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// The most recent calendar is kept on this device so it can be downloaded again.
+const LAST_CALENDAR_KEY = "shopping_list_last_calendar";
+
+function saveLastCalendar(ics, count) {
+  try {
+    localStorage.setItem(LAST_CALENDAR_KEY, JSON.stringify({ ics, count, savedAt: new Date().toISOString() }));
+  } catch {
+    /* storage unavailable: the download itself still happens */
+  }
+}
+
+function loadLastCalendar() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_CALENDAR_KEY) || "null");
+    return saved?.ics ? saved : null;
+  } catch {
+    return null;
+  }
 }
 
 function h(tag, props = {}, ...children) {
@@ -185,6 +197,15 @@ export function createWizard(ctx) {
       }));
     }
     root.body.append(wrap);
+
+    const last = loadLastCalendar();
+    if (last) {
+      const when = new Date(last.savedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      root.body.append(h("div", { class: "wizard-last-calendar" },
+        h("span", { text: `Last calendar: ${last.count} meal${last.count === 1 ? "" : "s"} · ${when}` }),
+        h("button", { type: "button", class: "icon-btn", text: "Download again", onclick: () => downloadIcs(last.ics) })
+      ));
+    }
   }
 
   function renderFavs() {
@@ -368,15 +389,14 @@ export function createWizard(ctx) {
       return;
     }
 
-    // Start the share sheet first, synchronously, so iOS still sees the tap that triggered it.
-    let calendarDone = Promise.resolve();
     if (plan.calendar && meals.length) {
       const ics = buildMealsIcs(meals.map(({ iso, meal }) => ({
         iso,
         name: meal.name,
         ingredients: meal.items.filter((i) => i.selected).map((i) => i.name)
       })));
-      calendarDone = shareIcs(ics).catch(() => ctx.toast("Couldn't open the calendar"));
+      saveLastCalendar(ics, meals.length);
+      downloadIcs(ics);
     }
 
     root.next.disabled = true;
@@ -390,7 +410,6 @@ export function createWizard(ctx) {
     root.next.disabled = false;
     close(true);
     ctx.toast(`Added ${added} item${added === 1 ? "" : "s"}${updated ? `, updated ${updated}` : ""}`);
-    await calendarDone;
   }
 
   root.next.addEventListener("click", () => {
