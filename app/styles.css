@@ -1128,13 +1128,3 @@ body.add-panel-collapsed .options-fab-btn {
   margin: 0 0 12px;
   line-height: 1.4;
 }
-
-#meal-calendar-date {
-  width: 100%;
-  margin-bottom: 12px;
-  min-height: 44px;
-}
-.add-meal-calendar-btn {
-  min-height: 48px;
-  margin-top: 8px;
-}
