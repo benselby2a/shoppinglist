@@ -1222,3 +1222,5 @@ a.wizard-link {
 }
 
 .wizard-ics-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.wizard-embed-hint { flex: 1 1 100%; margin: 6px 0 0; }

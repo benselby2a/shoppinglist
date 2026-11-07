@@ -104,6 +104,7 @@ async function publishIcs(icsText) {
 
 function icsActions(icsText, filename = "meals.ics") {
   const wrap = h("div", { class: "wizard-ics-actions" });
+  const embedded = window !== window.parent;
   const link = h("a", {
     class: "icon-btn wizard-link",
     href: `data:text/calendar;charset=utf-8,${encodeURIComponent(icsText)}`,
@@ -124,6 +125,12 @@ function icsActions(icsText, filename = "meals.ics") {
       class: "icon-btn wizard-link",
       text: "Share…",
       onclick: () => navigator.share({ files: [file], title: "Meal plan" }).catch(() => {})
+    }));
+  }
+  if (embedded) {
+    wrap.append(h("p", {
+      class: "wizard-hint wizard-embed-hint",
+      text: "Nothing happening? The page embedding this app blocks downloads (its iframe needs allow-downloads in its sandbox). You can also open the app directly in Safari."
     }));
   }
   return wrap;
