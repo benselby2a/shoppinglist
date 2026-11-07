@@ -276,7 +276,7 @@ export function createWizard(ctx) {
           })
         ));
         if (!meal.items.length && !meal.isNew) {
-          card.append(h("p", { class: "wizard-hint", text: "This meal has no saved ingredients." }));
+          card.append(h("p", { class: "wizard-hint", text: "No ingredients saved for this meal yet." }));
         }
         for (const item of meal.items) {
           const cb = h("input", { type: "checkbox", checked: item.selected });
@@ -335,6 +335,11 @@ export function createWizard(ctx) {
       root.body.append(list);
     }
 
+    const newNames = [...new Set(meals.filter((m) => m.meal.isNew).map((m) => m.meal.name))];
+    if (newNames.length) {
+      root.body.append(h("p", { class: "wizard-hint", text: `Saved as new meal${newNames.length === 1 ? "" : "s"} for next time: ${newNames.join(", ")}` }));
+    }
+
     if (meals.length) {
       const cb = h("input", { type: "checkbox", checked: plan.calendar });
       cb.addEventListener("change", () => { plan.calendar = cb.checked; });
@@ -364,7 +369,7 @@ export function createWizard(ctx) {
     root.next.disabled = true;
     const savedMeals = new Set();
     for (const { meal } of meals) {
-      if (!meal.isNew || savedMeals.has(meal.uid) || !meal.items.length) continue;
+      if (!meal.isNew || savedMeals.has(meal.uid)) continue;
       savedMeals.add(meal.uid);
       await ctx.createMeal(meal.name, meal.items);
     }
