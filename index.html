@@ -14,9 +14,9 @@
     <link rel="stylesheet" href="./app/styles.css" />
     <script>
       var inHub = window !== window.parent;
-      // Fill in with the embedding hub's actual origin(s), e.g. "https://hub.example.com".
-      // Left empty, embedded theme messages are ignored rather than trusted blindly.
-      var TRUSTED_HUB_ORIGINS = [];
+      // Origin (scheme + host, no path) of the hub that embeds this app. Theme messages
+      // from any other origin are ignored.
+      var TRUSTED_HUB_ORIGINS = ['https://benselby2a.github.io'];
       if (inHub) {
         document.documentElement.setAttribute('data-hub', '');
         window.addEventListener('message', function(e) {
