@@ -73,20 +73,29 @@ export function buildMealsIcs(events) {
   return lines.join("\r\n") + "\r\n";
 }
 
-// A web app cannot write to Calendar directly, so offer the .ics as a real link: Safari
-// ignores programmatic downloads but honours a tap on an anchor, and opening the file
-// brings up the system "Add to Calendar" prompt. URLs are revoked when the wizard reopens.
-let linkUrls = [];
-
-function icsLink(icsText, label, filename = "meals.ics") {
-  const url = URL.createObjectURL(new Blob([icsText], { type: "text/calendar" }));
-  linkUrls.push(url);
-  return h("a", { class: "icon-btn wizard-link", href: url, download: filename, text: label });
-}
-
-function releaseLinks() {
-  for (const url of linkUrls) URL.revokeObjectURL(url);
-  linkUrls = [];
+// A web app cannot write to Calendar directly, so offer the .ics two ways and let the
+// browser take whichever it supports. Opening the file brings up the system
+// "Add to Calendar" prompt.
+//  - Download: an anchor with a data: URL (Safari ignores programmatic and blob downloads)
+//  - Share: the native share sheet with the file attached, where the browser supports it
+function icsActions(icsText, filename = "meals.ics") {
+  const wrap = h("div", { class: "wizard-ics-actions" });
+  wrap.append(h("a", {
+    class: "icon-btn wizard-link",
+    href: `data:text/calendar;charset=utf-8,${encodeURIComponent(icsText)}`,
+    download: filename,
+    text: "Download"
+  }));
+  const file = new File([icsText], filename, { type: "text/calendar" });
+  if (navigator.canShare?.({ files: [file] })) {
+    wrap.append(h("button", {
+      type: "button",
+      class: "icon-btn wizard-link",
+      text: "Share…",
+      onclick: () => navigator.share({ files: [file], title: "Meal plan" }).catch(() => {})
+    }));
+  }
+  return wrap;
 }
 
 // The most recent calendar is kept on this device so it can be downloaded again.
@@ -141,7 +150,6 @@ export function createWizard(ctx) {
 
   function resetPlan() {
     days = planDays();
-    releaseLinks();
     plan = { done: null, step: 0, selectedDays: new Set(), favs: new Map(), dayMeals: new Map(), calendar: true };
     for (const fav of ctx.getFavourites()) {
       plan.favs.set(ctx.keyOf(fav.name), { ...fav, selected: !ctx.isOnList(fav.name) });
@@ -174,8 +182,8 @@ export function createWizard(ctx) {
     );
     if (ics) {
       root.body.append(
-        h("p", { class: "wizard-hint", text: "Tap below to download your meal calendar, then open the file to add the events." }),
-        icsLink(ics, "Download calendar")
+        h("p", { class: "wizard-hint", text: "Your meal calendar is ready. Download it (or share it), then open the file to add the events." }),
+        icsActions(ics)
       );
     }
   }
@@ -227,7 +235,7 @@ export function createWizard(ctx) {
       const when = new Date(last.savedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       root.body.append(h("div", { class: "wizard-last-calendar" },
         h("span", { text: `Last calendar: ${last.count} meal${last.count === 1 ? "" : "s"} · ${when}` }),
-        icsLink(last.ics, "Download again")
+        icsActions(last.ics)
       ));
     }
   }
