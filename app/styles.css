@@ -1220,3 +1220,5 @@ a.wizard-link {
   min-height: 44px;
   padding: 0 16px;
 }
+
+.wizard-ics-actions { display: flex; gap: 8px; flex-wrap: wrap; }
