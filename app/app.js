@@ -34,7 +34,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v154";
+const APP_VERSION = "v155";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -2473,6 +2473,15 @@ function getWeeklyWizard() {
       .filter((s) => s.favourite)
       .map((s) => ({ name: s.name, section: s.section || "" }))
       .sort((a, b) => a.name.localeCompare(b.name)),
+    getSuggestions: (query) => {
+      const q = (query || "").trim().toLowerCase();
+      if (q.length < 2) return [];
+      return state.suggestions
+        .filter((s) => s.name && s.name.toLowerCase().includes(q))
+        .sort((x, y) => (y.use_count || 0) - (x.use_count || 0))
+        .slice(0, 6)
+        .map((s) => ({ name: s.name, section: s.section || "" }));
+    },
     isOnList: (name) => getActiveUncheckedNameKeys().has(canonicalNameKey(name)),
     toast: showInfoToast,
     createMeal: createMealFromWizard,

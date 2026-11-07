@@ -110,7 +110,7 @@ function h(tag, props = {}, ...children) {
 
 // ctx supplies everything that lives in app.js:
 // { sections, keyOf, normalizeName, guessSection, getMeals, getMealItems, getFavourites,
-//   isOnList, createMeal(name, items), addToList(rows) -> { added, updated }, toast(msg) }
+//   getSuggestions(query) -> [{ name, section }], isOnList, createMeal(name, items), addToList(rows) -> { added, updated }, toast(msg) }
 export function createWizard(ctx) {
   const root = {
     modal: document.getElementById("wizard-modal"),
@@ -285,18 +285,31 @@ export function createWizard(ctx) {
         }
         if (meal.isNew) {
           const ing = h("input", { type: "text", class: "wizard-input", placeholder: "Add an ingredient", autocomplete: "off", spellcheck: "false" });
-          const add = () => {
-            const name = ctx.normalizeName(ing.value);
+          const sugg = h("div", { class: "wizard-options" });
+          const addNamed = (rawName, section) => {
+            const name = ctx.normalizeName(rawName);
             if (!name) return;
             if (!meal.items.some((i) => ctx.keyOf(i.name) === ctx.keyOf(name))) {
-              meal.items.push({ name, section: ctx.guessSection(name.toLowerCase()), selected: true });
+              meal.items.push({ name, section: section || ctx.guessSection(name.toLowerCase()), selected: true });
             }
             renderCards(meal.uid);
           };
+          const add = () => {
+            // A typed name that matches a known item reuses its spelling and section.
+            const known = ctx.getSuggestions(ing.value).find((x) => ctx.keyOf(x.name) === ctx.keyOf(ing.value));
+            addNamed(known ? known.name : ing.value, known?.section);
+          };
+          ing.addEventListener("input", () => {
+            sugg.innerHTML = "";
+            const taken = new Set(meal.items.map((i) => ctx.keyOf(i.name)));
+            for (const x of ctx.getSuggestions(ing.value).filter((x) => !taken.has(ctx.keyOf(x.name)))) {
+              sugg.append(h("button", { type: "button", class: "wizard-option", text: x.name, onclick: () => addNamed(x.name, x.section) }));
+            }
+          });
           ing.addEventListener("keydown", (ev) => {
             if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); add(); }
           });
-          card.append(h("div", { class: "wizard-ing-row" }, ing, h("button", { type: "button", class: "icon-btn", text: "Add", onclick: add })));
+          card.append(h("div", { class: "wizard-ing-row" }, ing, h("button", { type: "button", class: "icon-btn", text: "Add", onclick: add })), sugg);
           card.dataset.uid = String(meal.uid);
         }
         cards.append(card);
