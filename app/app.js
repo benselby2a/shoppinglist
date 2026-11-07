@@ -34,7 +34,7 @@ async function refreshAccessToken() {
     currentUserId = session.user?.id || null;
   }
 }
-const APP_VERSION = "v162";
+const APP_VERSION = "v163";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -72,6 +72,7 @@ const SECTION_KEYWORDS = {
 
 const ADD_CARD_COLLAPSED_KEY = "shopping_list_add_card_collapsed";
 const SHOP_HINT_SEEN_KEY = "shopping_list_shop_hint_seen";
+const WIZARD_HINT_SEEN_KEY = "shopping_list_wizard_hint_seen";
 
 const state = {
   items: [],
@@ -128,6 +129,8 @@ const el = {
   shopModeBanner: document.getElementById("shop-mode-banner"),
   shopHintModal: document.getElementById("shop-hint-modal"),
   shopHintOkBtn: document.getElementById("shop-hint-ok-btn"),
+  wizardHintModal: document.getElementById("wizard-hint-modal"),
+  wizardHintOkBtn: document.getElementById("wizard-hint-ok-btn"),
   addOtherShopBtn: document.getElementById("add-other-shop-btn"),
   shopModeText: document.getElementById("shop-mode-text"),
   shopModeSwitchBtn: document.getElementById("shop-mode-switch-btn"),
@@ -227,25 +230,38 @@ async function initApp() {
   });
 
   initServiceWorkerReleaseFlow();
-  showShopHintOnce();
+  showIntroHints();
 }
 
-// One-off intro to the ＋S / ＋B quick-add button; remembered per device.
-function showShopHintOnce() {
-  try {
-    if (localStorage.getItem(SHOP_HINT_SEEN_KEY)) return;
-  } catch {
-    return;
-  }
-  el.shopHintModal.classList.add("is-open");
-  el.shopHintOkBtn.addEventListener("click", () => {
-    el.shopHintModal.classList.remove("is-open");
+// One-off intro popups for new features, shown one at a time and remembered per device.
+function showIntroHints() {
+  const hints = [
+    { modal: el.shopHintModal, okBtn: el.shopHintOkBtn, key: SHOP_HINT_SEEN_KEY },
+    { modal: el.wizardHintModal, okBtn: el.wizardHintOkBtn, key: WIZARD_HINT_SEEN_KEY }
+  ];
+  const showNext = () => {
+    const hint = hints.shift();
+    if (!hint) return;
     try {
-      localStorage.setItem(SHOP_HINT_SEEN_KEY, "1");
+      if (localStorage.getItem(hint.key)) {
+        showNext();
+        return;
+      }
     } catch {
-      /* storage unavailable: hint may show again next launch */
+      return;
     }
-  }, { once: true });
+    hint.modal.classList.add("is-open");
+    hint.okBtn.addEventListener("click", () => {
+      hint.modal.classList.remove("is-open");
+      try {
+        localStorage.setItem(hint.key, "1");
+      } catch {
+        /* storage unavailable: hint may show again next launch */
+      }
+      showNext();
+    }, { once: true });
+  };
+  showNext();
 }
 
 async function init() {
