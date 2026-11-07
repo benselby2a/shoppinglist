@@ -1160,7 +1160,39 @@ body.add-panel-collapsed .options-fab-btn {
 .wizard-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface-raised); }
 .wizard-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .wizard-check { display: flex; align-items: center; gap: 10px; min-height: 40px; }
-.wizard-check input { width: 20px; height: 20px; flex: 0 0 auto; }
+/* The global appearance reset removes native checkboxes, so draw them. */
+.wizard-check input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 2px solid var(--muted);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.wizard-check input[type="checkbox"]:checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.wizard-check input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 2px;
+  width: 6px;
+  height: 12px;
+  border: solid #fff;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+.wizard-check input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
 .wizard-ing-row { display: flex; gap: 8px; margin-top: 6px; }
 .wizard-review { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; }
 .wizard-calendar { border-top: 1px solid var(--border); padding-top: 10px; }
