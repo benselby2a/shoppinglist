@@ -43,7 +43,7 @@ async function refreshAccessToken() {
     currentUserName = displayNameFor(session.user);
   }
 }
-const APP_VERSION = "v165";
+const APP_VERSION = "v166";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -2131,6 +2131,7 @@ async function syncNow() {
   state.syncing = true;
   renderSyncBar();
 
+  let pushError = "";
   while (state.pending.length) {
     const opIndex = findNextPendingIndex();
     const op = state.pending[opIndex];
@@ -2149,14 +2150,15 @@ async function syncNow() {
       continue;
     }
     if (error) {
-      state.lastSyncError = `sync failed: ${error.message}`;
+      pushError = `sync failed: ${error.message}`;
+      state.lastSyncError = pushError;
       break;
     }
     state.pending.splice(opIndex, 1);
     await persistLocal();
   }
 
-  const { data, error } = await apiSelect("shopping_items", {
+  const { data, error } = await apiSelectAll("shopping_items", {
     columns: "*",
     eq: { household_id: APP_CONFIG.householdId },
     is: { deleted_at: "null" }
@@ -2166,7 +2168,8 @@ async function syncNow() {
   if (error && state.lastSyncAt) {
     state.lastSyncError = `connect failed: ${error.message}`;
   } else {
-    state.lastSyncError = "";
+    // Keep an upload failure visible: a good download must not hide stuck local changes.
+    state.lastSyncError = pushError;
   }
   if (!error) state.lastSyncAt = new Date().toISOString();
 
@@ -2697,7 +2700,7 @@ async function checkAllActiveItems() {
 
 async function syncSuggestionsFromRemote() {
   if (!supabase) return;
-  const { data, error } = await apiSelect("suggestion_items", {
+  const { data, error } = await apiSelectAll("suggestion_items", {
     columns: "*",
     eq: { household_id: APP_CONFIG.householdId }
   });
@@ -2741,13 +2744,13 @@ async function syncSuggestionsFromRemote() {
 
 async function syncMealsFromRemote() {
   if (!supabase) return;
-  const { data: mealRows, error: mealError } = await apiSelect("meals", {
+  const { data: mealRows, error: mealError } = await apiSelectAll("meals", {
     columns: "*",
     eq: { household_id: APP_CONFIG.householdId }
   });
   if (mealError || !mealRows) return;
 
-  const { data: mealItemRows, error: itemError } = await apiSelect("meal_items", {
+  const { data: mealItemRows, error: itemError } = await apiSelectAll("meal_items", {
     columns: "*",
     eq: { household_id: APP_CONFIG.householdId }
   });
@@ -2794,7 +2797,7 @@ async function upsertSuggestionRemote(suggestion) {
   const { error } = await apiUpsert("suggestion_items", payload);
   if (!error && suggestion.id) return;
 
-  const { data } = await apiSelect("suggestion_items", {
+  const { data } = await apiSelectAll("suggestion_items", {
     columns: "id",
     eq: { household_id: APP_CONFIG.householdId, name: payload.name }
   });
@@ -2888,12 +2891,29 @@ async function apiUpsert(table, payload) {
   });
 }
 
-async function apiSelect(table, { columns = "*", eq = {}, is = {}, ilike = {} } = {}) {
+async function apiSelect(table, { columns = "*", eq = {}, is = {}, ilike = {}, order, limit, offset } = {}) {
   const query = { select: columns };
+  if (order) query.order = order;
+  if (limit != null) query.limit = String(limit);
+  if (offset) query.offset = String(offset);
   for (const [k, v] of Object.entries(eq)) query[k] = `eq.${encodeFilterValue(v)}`;
   for (const [k, v] of Object.entries(is)) query[k] = `is.${v}`;
   for (const [k, v] of Object.entries(ilike)) query[k] = `ilike.${encodeFilterValue(v)}`;
   return apiRequest({ table, method: "GET", query });
+}
+
+// The REST API returns at most a fixed number of rows per request (1000 by default), so a
+// plain select silently drops rows once a table grows past that -- which made newer items
+// vanish on other devices. Page through with a stable order until a page comes back empty.
+async function apiSelectAll(table, opts = {}) {
+  const rows = [];
+  for (let page = 0; page < 200; page++) {
+    const { data, error } = await apiSelect(table, { ...opts, order: "id.asc", limit: 1000, offset: rows.length });
+    if (error) return { data: null, error };
+    if (!data?.length) break;
+    rows.push(...data);
+  }
+  return { data: rows, error: null };
 }
 
 async function apiDelete(table, { eq = {}, ilike = {} } = {}) {
