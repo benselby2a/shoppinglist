@@ -43,7 +43,7 @@ async function refreshAccessToken() {
     currentUserName = displayNameFor(session.user);
   }
 }
-const APP_VERSION = "v166";
+const APP_VERSION = "v167";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -2177,17 +2177,102 @@ async function syncNow() {
     const pendingShoppingById = buildPendingShoppingPayloadMap();
     const merged = mergeById(state.items, data, pendingShoppingById);
     detectConflicts(state.items, merged);
-    state.items = merged;
+    // The download is complete, so a checked-off item the server no longer has was pruned
+    // (see pruneCheckedHistory); drop it here too rather than keeping it forever.
+    const remoteIds = new Set(data.map((r) => r.id));
+    state.items = merged.filter((i) => !i.checked || remoteIds.has(i.id) || pendingShoppingById.has(i.id));
   }
 
   if (!error) {
     await syncSuggestionsFromRemote();
     await syncMealsFromRemote();
     await syncSettingsFromRemote();
+    if (!pushError && !state.pending.length) {
+      try {
+        await pruneCheckedHistory();
+      } catch {
+        /* housekeeping only: never let it stall syncing */
+      }
+    }
   }
 
   state.syncing = false;
   render();
+}
+
+// Checked-off items are only needed briefly (long enough for every device to see the tick).
+// Names are remembered for autocomplete and the item database by the suggestions table, so
+// older checked rows are deleted to keep the table, and every sync, small.
+const PRUNE_AFTER_DAYS = 7;
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+let lastPruneAt = 0;
+
+async function pruneCheckedHistory() {
+  if (Date.now() - lastPruneAt < PRUNE_INTERVAL_MS) return;
+  lastPruneAt = Date.now();
+
+  const cutoff = Date.now() - PRUNE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  const pendingIds = new Set(state.pending.map((op) => op?.payload?.id).filter(Boolean));
+  const stale = state.items.filter(
+    (i) => i.checked && !i.deleted_at && !pendingIds.has(i.id) && (Date.parse(i.updated_at || 0) || 0) < cutoff
+  );
+  if (!stale.length) return;
+
+  // Only delete an item once its name is safely stored as a suggestion on the server.
+  const { data: remoteSuggestions, error } = await apiSelectAll("suggestion_items", {
+    columns: "name",
+    eq: { household_id: APP_CONFIG.householdId }
+  });
+  if (error) return;
+  const known = new Set(remoteSuggestions.map((s) => canonicalNameKey(s.name)));
+
+  const deletable = [];
+  for (const item of stale) {
+    const key = canonicalNameKey(item.name);
+    if (!key) continue;
+    if (!known.has(key)) {
+      const name = normalizeItemName(item.name);
+      const local = state.suggestions.find((s) => canonicalNameKey(s.name) === key);
+      const suggestion = local || {
+        id: crypto.randomUUID(),
+        household_id: APP_CONFIG.householdId,
+        name,
+        section: item.section || "",
+        use_count: 1,
+        last_used_at: item.updated_at || new Date().toISOString()
+      };
+      const { error: saveError } = await apiUpsert("suggestion_items", {
+        id: suggestion.id,
+        household_id: APP_CONFIG.householdId,
+        name,
+        section: suggestion.section || "",
+        favourite: Boolean(suggestion.favourite),
+        big_shop: Boolean(suggestion.big_shop),
+        use_count: suggestion.use_count || 1,
+        last_used_at: suggestion.last_used_at || new Date().toISOString()
+      });
+      if (saveError) continue;
+      if (!local) state.suggestions.push(suggestion);
+      known.add(key);
+    }
+    deletable.push(item);
+  }
+
+  const removed = new Set();
+  for (let i = 0; i < deletable.length; i += 100) {
+    const chunk = deletable.slice(i, i + 100);
+    const { error: deleteError } = await apiDelete("shopping_items", {
+      eq: { household_id: APP_CONFIG.householdId },
+      inList: { id: chunk.map((x) => x.id) }
+    });
+    if (deleteError) break;
+    for (const x of chunk) removed.add(x.id);
+  }
+  if (!removed.size) return;
+
+  state.items = state.items.filter((i) => !removed.has(i.id));
+  rebuildSuggestionIndex();
+  await persistLocal();
 }
 
 function findNextPendingIndex() {
@@ -2916,8 +3001,9 @@ async function apiSelectAll(table, opts = {}) {
   return { data: rows, error: null };
 }
 
-async function apiDelete(table, { eq = {}, ilike = {} } = {}) {
+async function apiDelete(table, { eq = {}, ilike = {}, inList = {} } = {}) {
   const query = {};
+  for (const [k, v] of Object.entries(inList)) query[k] = `in.(${v.map(encodeFilterValue).join(",")})`;
   for (const [k, v] of Object.entries(eq)) query[k] = `eq.${encodeFilterValue(v)}`;
   for (const [k, v] of Object.entries(ilike)) query[k] = `ilike.${encodeFilterValue(v)}`;
   return apiRequest({ table, method: "DELETE", query });
