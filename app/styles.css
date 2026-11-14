@@ -1223,3 +1223,13 @@ a.wizard-link {
 
 .wizard-ics-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+
+.item-menu-added-info {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}

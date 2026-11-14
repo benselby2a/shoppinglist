@@ -8,6 +8,8 @@ create table if not exists public.shopping_items (
   quantity_text text,
   checked boolean not null default false,
   small_shop boolean not null default false,
+  added_at timestamptz,
+  added_by text,
   deleted_at timestamptz,
   updated_at timestamptz not null default now(),
   updated_by text
@@ -15,6 +17,10 @@ create table if not exists public.shopping_items (
 
 alter table public.shopping_items
   add column if not exists small_shop boolean not null default false;
+
+alter table public.shopping_items
+  add column if not exists added_at timestamptz,
+  add column if not exists added_by text;
 
 create index if not exists shopping_items_household_idx on public.shopping_items(household_id);
 create index if not exists shopping_items_updated_idx on public.shopping_items(updated_at desc);
