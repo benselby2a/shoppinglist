@@ -16,6 +16,14 @@ let accessToken = null;
 let currentUserId = null;
 let currentUserName = "";
 
+// Offline-first auth. The list is local-first, so a missing or expired login never blocks
+// opening the app: it only pauses syncing until a session can be restored.
+const EVER_SIGNED_IN_KEY = "shopping_list_ever_signed_in";
+const LAST_USER_KEY = "shopping_list_last_user";
+const NETWORK_TIMEOUT_MS = 10000;
+let authNeeded = false;
+let lastReauthAt = 0;
+
 if (window.supabase && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey) {
   sbClient = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
 }
@@ -25,6 +33,9 @@ function setAuthedUI(authed) {
   const shell = document.getElementById("app-shell");
   if (gate) gate.classList.toggle("hidden", authed);
   if (shell) shell.classList.toggle("hidden", !authed);
+  // A returning user can always go back to their saved list without signing in.
+  const skip = document.getElementById("auth-skip-btn");
+  if (skip) skip.style.display = !authed && everSignedIn() ? "block" : "none";
 }
 
 // Friendly name for "who added this": explicit name if set, else the part of the email before "@".
@@ -34,16 +45,94 @@ function displayNameFor(user) {
   return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "";
 }
 
+function everSignedIn() {
+  try {
+    if (localStorage.getItem(EVER_SIGNED_IN_KEY) === "1") return true;
+    // Devices signed in before this flag existed still hold the Supabase session key.
+    return Object.keys(localStorage).some((k) => /^sb-.+-auth-token/.test(k));
+  } catch {
+    return false;
+  }
+}
+
+function applySession(session) {
+  const changedUser = session.user?.id !== currentUserId;
+  accessToken = session.access_token;
+  currentUserId = session.user?.id || null;
+  currentUserName = displayNameFor(session.user);
+  if (changedUser) {
+    try {
+      localStorage.setItem(EVER_SIGNED_IN_KEY, "1");
+      localStorage.setItem(LAST_USER_KEY, JSON.stringify({ id: currentUserId, name: currentUserName }));
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  setAuthNeeded(false);
+}
+
+// Without a session (offline) fall back to who last signed in, so "added by" still works.
+function restoreRememberedUser() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_USER_KEY) || "null");
+    if (!saved) return;
+    currentUserId = currentUserId || saved.id || null;
+    currentUserName = currentUserName || saved.name || "";
+  } catch {
+    /* ignore a corrupt entry */
+  }
+}
+
+function setAuthNeeded(value) {
+  if (authNeeded === value) return;
+  authNeeded = value;
+  renderSyncBar();
+}
+
+function withTimeout(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("timeout")), ms); })
+  ]).finally(() => clearTimeout(timer));
+}
+
+// Quietly gets a fresh session using the stored refresh token (never a stored password).
+// Returns true when signed in. Only flags "sign in needed" when the server rejects the
+// refresh token; being offline or timing out just means "try again later".
+async function trySilentReauth(force = false) {
+  if (!sbClient) return false;
+  if (!force && Date.now() - lastReauthAt < 15000) return Boolean(accessToken);
+  lastReauthAt = Date.now();
+  try {
+    const { data: { session } } = await withTimeout(sbClient.auth.getSession(), NETWORK_TIMEOUT_MS);
+    if (session) {
+      applySession(session);
+      return true;
+    }
+    const { data, error } = await withTimeout(sbClient.auth.refreshSession(), NETWORK_TIMEOUT_MS);
+    if (data?.session) {
+      applySession(data.session);
+      state.supabaseReachable = true;
+      return true;
+    }
+    const networkProblem = error && (error.name === "AuthRetryableFetchError" || /fetch|network|timeout/i.test(error.message || ""));
+    if (networkProblem) state.supabaseReachable = false;
+    else if (error) setAuthNeeded(true);
+  } catch {
+    /* offline or slow: stay on local data and retry on the next sync */
+    state.supabaseReachable = false;
+  }
+  renderSyncBar();
+  return false;
+}
+
 async function refreshAccessToken() {
   if (!sbClient) return;
   const { data: { session } } = await sbClient.auth.getSession();
-  if (session) {
-    accessToken = session.access_token;
-    currentUserId = session.user?.id || null;
-    currentUserName = displayNameFor(session.user);
-  }
+  if (session) applySession(session);
 }
-const APP_VERSION = "v167";
+const APP_VERSION = "v168";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -239,6 +328,8 @@ async function initApp() {
   });
 
   initServiceWorkerReleaseFlow();
+  // Ask the browser not to evict the saved list when storage is tight (best effort).
+  navigator.storage?.persist?.().catch(() => {});
   showIntroHints();
 }
 
@@ -288,31 +379,41 @@ async function init() {
     });
   }
 
+  const skipBtn = document.getElementById("auth-skip-btn");
+  if (skipBtn) skipBtn.addEventListener("click", () => setAuthedUI(true));
+
   if (sbClient) {
-    sbClient.auth.onAuthStateChange((_event, session) => {
+    sbClient.auth.onAuthStateChange((event, session) => {
       if (session) {
-        accessToken = session.access_token;
-        currentUserId = session.user?.id || null;
-    currentUserName = displayNameFor(session.user);
+        applySession(session);
         setAuthedUI(true);
         // Defer to avoid Supabase internal lock in Safari
         setTimeout(() => initApp(), 0);
+      } else if (everSignedIn()) {
+        // Returning user: keep the local list usable and offer to sign in again.
+        if (event === "SIGNED_OUT" && navigator.onLine) setAuthNeeded(true);
       } else if (navigator.onLine) {
         setAuthedUI(false);
       }
     });
 
-    const { data: { session } } = await sbClient.auth.getSession();
+    let session = null;
+    try {
+      ({ data: { session } } = await withTimeout(sbClient.auth.getSession(), NETWORK_TIMEOUT_MS));
+    } catch {
+      /* slow or no connection: fall through to the offline path below */
+    }
     if (session) {
-      accessToken = session.access_token;
-      currentUserId = session.user?.id || null;
-    currentUserName = displayNameFor(session.user);
+      applySession(session);
       setAuthedUI(true);
       await initApp();
-    } else if (!navigator.onLine) {
-      // Offline with no session — launch app in offline mode with local data
+    } else if (everSignedIn() || !navigator.onLine) {
+      // Weak or no signal, or an expired login: open on the saved local copy and restore
+      // the session in the background once a connection is available.
+      restoreRememberedUser();
       setAuthedUI(true);
       await initApp();
+      trySilentReauth(true).then((ok) => { if (ok) syncNow(); });
     } else {
       setAuthedUI(false);
     }
@@ -324,8 +425,13 @@ async function init() {
 function bindEvents() {
   window.addEventListener("online", () => {
     state.online = true;
+    lastReauthAt = 0;
     renderSyncBar();
     syncNow();
+  });
+
+  el.syncBar.addEventListener("click", () => {
+    if (authNeeded) setAuthedUI(false);
   });
 
   window.addEventListener("offline", () => {
@@ -1796,24 +1902,33 @@ function applySuggestionHighlight(options, index) {
 
 function renderSyncBar() {
   const pendingCount = state.pending.length;
-  const hasError = Boolean(state.lastSyncError);
-  const effectivelyOnline = state.online && (supabase ? state.supabaseReachable : true);
-  const warning = hasError || !effectivelyOnline;
+  const offline = !state.online || (supabase && !state.supabaseReachable);
 
-  el.syncBar.className = `sync-dot ${warning ? "sync-conflict" : "sync-online"}`;
-  el.syncText.textContent = warning ? "Sync warning" : state.syncing ? "Syncing" : "Online";
-
+  let cls = "sync-online";
+  let text = state.syncing ? "Syncing" : "Online";
   let meta = "";
-  if (warning && pendingCount > 0) {
-    meta = `· ${pendingCount} pending`;
-  } else if (warning) {
-    meta = "";
+
+  if (authNeeded) {
+    cls = "sync-conflict";
+    text = "Sign in to sync";
+    meta = pendingCount > 0 ? `· ${pendingCount} saved here` : "";
+  } else if (offline) {
+    cls = "sync-offline";
+    text = "Offline";
+    meta = pendingCount > 0 ? `· ${pendingCount} saved here` : "· saved on this device";
+  } else if (state.lastSyncError) {
+    cls = "sync-conflict";
+    text = "Sync warning";
+    meta = pendingCount > 0 ? `· ${pendingCount} pending` : "";
   } else if (pendingCount > 0) {
     meta = `· ${pendingCount} pending`;
   } else if (state.lastSyncAt) {
     const t = new Date(state.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     meta = `· ${t}`;
   }
+
+  el.syncBar.className = `sync-dot ${cls}`;
+  el.syncText.textContent = text;
   el.syncMeta.textContent = meta;
 }
 
@@ -2126,8 +2241,12 @@ function withoutAddedFields(table, payload) {
 
 async function syncNow() {
   if (!supabase || state.syncing) return;
-  // Skip sync silently if no auth token yet (still establishing connection)
-  if (!accessToken) return;
+  // No session yet (offline start, expired login): try to restore it quietly, else wait.
+  if (!accessToken && !(await trySilentReauth())) {
+    renderSyncBar();
+    return;
+  }
+  if (state.syncing) return;
   state.syncing = true;
   renderSyncBar();
 
@@ -3021,19 +3140,33 @@ async function apiRequest({ table, method, query = {}, headers = {}, body }) {
   const qs = new URLSearchParams(query).toString();
   const url = `${supabase.url}/rest/v1/${table}${qs ? `?${qs}` : ""}`;
 
+  const send = async () => {
+    // Don't wait on a dead connection: give up after a few seconds and treat it as offline.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+    try {
+      return await fetch(url, {
+        method,
+        headers: {
+          apikey: supabase.anonKey,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Accept-Profile": APP_CONFIG.supabaseSchema || "public",
+          "Content-Profile": APP_CONFIG.supabaseSchema || "public",
+          ...headers
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        apikey: supabase.anonKey,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Accept-Profile": APP_CONFIG.supabaseSchema || "public",
-        "Content-Profile": APP_CONFIG.supabaseSchema || "public",
-        ...headers
-      },
-      body: body ? JSON.stringify(body) : undefined
-    });
+    let res = await send();
+    // An expired token: refresh it quietly and retry once.
+    if (res.status === 401 && (await trySilentReauth(true))) res = await send();
 
     let data = null;
     const text = await res.text();
@@ -3047,7 +3180,8 @@ async function apiRequest({ table, method, query = {}, headers = {}, body }) {
 
     return { data, error: null };
   } catch (err) {
-    return { data: null, error: { message: err?.message || "network error" } };
+    const timedOut = err?.name === "AbortError";
+    return { data: null, error: { message: timedOut ? "timeout" : err?.message || "network error" } };
   }
 }
 

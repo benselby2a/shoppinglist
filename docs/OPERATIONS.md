@@ -37,3 +37,11 @@
   (`apiRequest` returns an error instead of falling back to the anon key)
 - If offline: app should still work locally and queue pending ops
 
+## Offline and Sign-in Behaviour
+- The app opens on the locally saved list even with no signal or an expired login; the sign-in
+  screen only appears on a first-ever launch with no saved login.
+- A missing/expired session is restored quietly in the background using the stored refresh
+  token (no password is stored), on start-up, when the connection returns, and before each sync.
+- If the server rejects the refresh token the status bar shows "Sign in to sync"; tap it to sign in
+  (or "Back to my list"). Changes keep queuing on the device until sync resumes.
+- Network requests time out after 10s and count as offline instead of hanging.
