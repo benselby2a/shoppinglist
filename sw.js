@@ -1,4 +1,4 @@
-const CACHE_VERSION = "msl-shell-v166";
+const CACHE_VERSION = "msl-shell-v167";
 // Holds the meal-plan .ics the wizard generates (see app/wizard.js); kept across releases.
 const CALENDAR_CACHE = "msl-calendar";
 const SHELL_ASSETS = [
