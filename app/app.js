@@ -14,6 +14,7 @@ if (inHub) document.documentElement.setAttribute("data-hub", "");
 let sbClient = null;
 let accessToken = null;
 let currentUserId = null;
+let currentUserName = "";
 
 if (window.supabase && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey) {
   sbClient = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
@@ -26,15 +27,23 @@ function setAuthedUI(authed) {
   if (shell) shell.classList.toggle("hidden", !authed);
 }
 
+// Friendly name for "who added this": explicit name if set, else the part of the email before "@".
+function displayNameFor(user) {
+  const meta = user?.user_metadata || {};
+  const raw = meta.full_name || meta.name || (user?.email || "").split("@")[0].split(/[._+-]/)[0] || "";
+  return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "";
+}
+
 async function refreshAccessToken() {
   if (!sbClient) return;
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) {
     accessToken = session.access_token;
     currentUserId = session.user?.id || null;
+    currentUserName = displayNameFor(session.user);
   }
 }
-const APP_VERSION = "v164";
+const APP_VERSION = "v165";
 
 const SECTIONS = [
   "Fruit and Veg",
@@ -284,6 +293,7 @@ async function init() {
       if (session) {
         accessToken = session.access_token;
         currentUserId = session.user?.id || null;
+    currentUserName = displayNameFor(session.user);
         setAuthedUI(true);
         // Defer to avoid Supabase internal lock in Safari
         setTimeout(() => initApp(), 0);
@@ -296,6 +306,7 @@ async function init() {
     if (session) {
       accessToken = session.access_token;
       currentUserId = session.user?.id || null;
+    currentUserName = displayNameFor(session.user);
       setAuthedUI(true);
       await initApp();
     } else if (!navigator.onLine) {
@@ -643,6 +654,7 @@ async function onAddItemSubmit(e, otherShop = false) {
   };
   if (toSmall) item.small_shop = true;
 
+  stampAdded(item);
   state.items.push(item);
   captureUndo("add", { id: item.id, name: item.name });
   render();
@@ -697,6 +709,25 @@ function render() {
   }
 
   renderSyncBar();
+}
+
+// Records when and by whom an item was put on the list (shown in the item's ... menu).
+function stampAdded(item) {
+  item.added_at = new Date().toISOString();
+  item.added_by = currentUserName || null;
+}
+
+// e.g. "Added by Ben on Tuesday 13th November 8pm"
+function describeAdded(item) {
+  if (!item.added_at) return "Added date not recorded";
+  const d = new Date(item.added_at);
+  const day = d.getDate();
+  const suffix = day % 100 >= 11 && day % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[day % 10] || "th");
+  const hour = d.getHours() % 12 || 12;
+  const minutes = d.getMinutes();
+  const time = `${hour}${minutes ? `:${String(minutes).padStart(2, "0")}` : ""}${d.getHours() < 12 ? "am" : "pm"}`;
+  const date = `${d.toLocaleDateString("en-GB", { weekday: "long" })} ${day}${suffix} ${d.toLocaleDateString("en-GB", { month: "long" })}`;
+  return `Added ${item.added_by ? `by ${item.added_by} ` : ""}on ${date} ${time}`;
 }
 
 function isSmallShop() {
@@ -807,6 +838,7 @@ function itemRow(item) {
         </div>
         <button class="item-menu-fav-btn db-icon-btn db-fav-btn item-menu-action-btn" type="button"></button>
         <button class="item-menu-shop-btn db-icon-btn item-menu-action-btn" type="button"></button>
+        <div class="item-menu-added-info"></div>
       </div>
     </div>
   `;
@@ -885,6 +917,8 @@ function itemRow(item) {
     render();
     menu.hidden = true;
   });
+
+  row.querySelector(".item-menu-added-info").textContent = describeAdded(item);
 
   // Sends the item to the other list (small <-> big); it leaves the current view.
   const shopBtn = row.querySelector(".item-menu-shop-btn");
@@ -1614,6 +1648,7 @@ async function addMealToList(mealId) {
       updated_at: new Date().toISOString()
     };
     stampShopMode(item);
+    stampAdded(item);
     state.items.push(item);
     active.add(key);
     added += 1;
@@ -2082,6 +2117,13 @@ async function initSupabase() {
   supabase = { url: APP_CONFIG.supabaseUrl, anonKey: APP_CONFIG.supabaseAnonKey };
 }
 
+let addedColumnsMissing = false;
+function withoutAddedFields(table, payload) {
+  if (!addedColumnsMissing || table !== "shopping_items" || Array.isArray(payload)) return payload;
+  const { added_at, added_by, ...rest } = payload;
+  return rest;
+}
+
 async function syncNow() {
   if (!supabase || state.syncing) return;
   // Skip sync silently if no auth token yet (still establishing connection)
@@ -2094,7 +2136,12 @@ async function syncNow() {
     const op = state.pending[opIndex];
     const table = inferPendingTable(op);
     op.table = table;
-    const { error } = await apiUpsert(table, op.payload);
+    let { error } = await apiUpsert(table, withoutAddedFields(table, op.payload));
+    if (error && table === "shopping_items" && /added_(at|by)/.test(error.message || "")) {
+      // The added_at/added_by migration hasn't been run; sync without them until it is.
+      addedColumnsMissing = true;
+      ({ error } = await apiUpsert(table, withoutAddedFields(table, op.payload)));
+    }
     if (error && table === "list_settings") {
       // Don't let an unmigrated settings table block item sync; the mode still
       // works locally and re-queues on the next toggle.
@@ -2251,7 +2298,9 @@ function mergeById(local, remote, pendingShoppingById = new Map()) {
       // Prefer local state while a newer/equal pending write is still unsynced.
       if (Math.max(localTs, pendingTs) >= remoteTs) continue;
     }
-    byId.set(i.id, i);
+    byId.set(i.id, localItem?.added_at && !i.added_at
+      ? { ...i, added_at: localItem.added_at, added_by: localItem.added_by }
+      : i);
   }
   return [...byId.values()];
 }
@@ -2567,6 +2616,7 @@ async function addWizardRowsToList(rows) {
       updated_at: nowIso,
       updated_by: currentUserId
     };
+    stampAdded(item);
     state.items.push(item);
     await enqueue("upsert", item);
     await upsertSuggestion(name, section);
@@ -2607,6 +2657,7 @@ async function addFavouritesToList() {
     };
     stampShopMode(item);
 
+    stampAdded(item);
     state.items.push(item);
     active.add(key);
     await enqueue("upsert", item);
