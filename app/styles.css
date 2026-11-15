@@ -1240,3 +1240,27 @@ a.wizard-link {
   border: 1px solid var(--border); border-radius: 6px;
   font-size: 0.9rem; cursor: pointer;
 }
+
+.wizard-combo { position: relative; }
+.wizard-combo-input { padding-right: 44px; }
+.wizard-combo-toggle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.wizard-dropdown {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.08);
+}

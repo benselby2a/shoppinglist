@@ -132,7 +132,7 @@ async function refreshAccessToken() {
   const { data: { session } } = await sbClient.auth.getSession();
   if (session) applySession(session);
 }
-const APP_VERSION = "v168";
+const APP_VERSION = "v169";
 
 const SECTIONS = [
   "Fruit and Veg",
