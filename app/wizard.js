@@ -288,53 +288,85 @@ export function createWizard(ctx) {
 
     const input = h("input", {
       type: "text",
-      class: "wizard-input",
-      placeholder: "Type a meal, e.g. Spaghetti bolognese",
+      class: "wizard-input wizard-combo-input",
+      placeholder: "Pick a meal or type a new one",
       autocomplete: "off",
       autocapitalize: "none",
       spellcheck: "false"
     });
-    const options = h("div", { class: "wizard-options" });
+    // Keep focus on the input while tapping the arrow or an option, so the list doesn't close early.
+    const keepFocus = (ev) => ev.preventDefault();
+    const toggle = h("button", { type: "button", class: "wizard-combo-toggle", "aria-label": "Show saved meals", text: "▾", onmousedown: keepFocus });
+    const combo = h("div", { class: "wizard-combo" }, input, toggle);
+    const options = h("div", { class: "wizard-options wizard-dropdown", hidden: true });
     const cards = h("div", { class: "wizard-cards" });
-    root.body.append(input, options, cards);
+    root.body.append(combo, options, cards);
+
+    let listOpen = false;
+    const setOpen = (value) => {
+      listOpen = value;
+      options.hidden = !value;
+      if (value) renderOptions();
+    };
 
     const addMeal = (meal) => {
       meals.push(meal);
       input.value = "";
-      renderOptions();
+      setOpen(false);
       renderCards();
     };
+    const pickSaved = (m) => addMeal({
+      uid: ++uid,
+      name: m.name,
+      isNew: false,
+      items: ctx.getMealItems(m.id).map((i) => ({ name: i.name, section: i.section || "", selected: true }))
+    });
+    const createNew = (raw) => addMeal({ uid: ++uid, name: ctx.normalizeName(raw), isNew: true, items: [] });
 
+    // The dropdown lists every saved meal; typing narrows it and offers to create a new one.
     function renderOptions() {
       options.innerHTML = "";
       const raw = input.value.trim();
-      if (!raw) return;
       const q = raw.toLowerCase();
-      const matches = ctx.getMeals().filter((m) => m.name.toLowerCase().includes(q)).slice(0, 6);
+      const saved = ctx.getMeals();
+      const matches = saved.filter((m) => !q || m.name.toLowerCase().includes(q));
       for (const m of matches) {
-        options.append(h("button", {
-          type: "button",
-          class: "wizard-option",
-          text: m.name,
-          onclick: () => addMeal({
-            uid: ++uid,
-            name: m.name,
-            isNew: false,
-            items: ctx.getMealItems(m.id).map((i) => ({ name: i.name, section: i.section || "", selected: true }))
-          })
-        }));
+        options.append(h("button", { type: "button", class: "wizard-option", text: m.name, onmousedown: keepFocus, onclick: () => pickSaved(m) }));
       }
-      const exact = ctx.getMeals().some((m) => ctx.keyOf(m.name) === ctx.keyOf(raw));
-      if (!exact) {
+      if (raw && !saved.some((m) => ctx.keyOf(m.name) === ctx.keyOf(raw))) {
         options.append(h("button", {
           type: "button",
           class: "wizard-option wizard-option-new",
           text: `＋ Create new meal "${ctx.normalizeName(raw)}"`,
-          onclick: () => addMeal({ uid: ++uid, name: ctx.normalizeName(raw), isNew: true, items: [] })
+          onmousedown: keepFocus,
+          onclick: () => createNew(raw)
         }));
       }
+      if (!options.children.length) {
+        options.append(h("p", { class: "wizard-hint", text: "No saved meals yet. Type a name to create one." }));
+      }
     }
-    input.addEventListener("input", renderOptions);
+
+    input.addEventListener("focus", () => setOpen(true));
+    input.addEventListener("input", () => setOpen(true));
+    input.addEventListener("blur", () => setTimeout(() => setOpen(false), 150));
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        setOpen(false);
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const raw = input.value.trim();
+        if (!raw) return;
+        const exact = ctx.getMeals().find((m) => ctx.keyOf(m.name) === ctx.keyOf(raw));
+        if (exact) pickSaved(exact);
+        else createNew(raw);
+      }
+    });
+    toggle.addEventListener("click", () => {
+      if (listOpen) setOpen(false);
+      else { input.focus(); setOpen(true); }
+    });
 
     function renderCards(focusUid = null) {
       cards.innerHTML = "";
